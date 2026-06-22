@@ -17,3 +17,11 @@ export {
   type TextTargetOptions,
   type DenseTextTargetOptions,
 } from "./sampling.js";
+
+// GLSL シェーダ（Task-003）
+export {
+  buildVertexShader,
+  FRAGMENT_SHADER,
+  glyphPositionAttribute,
+  GLYPH_POSITION_ATTRIBUTE_PREFIX,
+} from "./shaders.js";
