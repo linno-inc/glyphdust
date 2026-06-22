@@ -7,7 +7,17 @@
     <style>
       :root { color-scheme: light; }
       * { margin: 0; box-sizing: border-box; }
-      html, body { background: #fafbfc; color: #1b2330; font-family: system-ui, sans-serif; }
+      html, body { color: #1b2330; font-family: system-ui, sans-serif; }
+      /* 上質なアンビエント背景: 青グロー + インクグロー + 微細ドットグリッド（固定）。 */
+      body {
+        background:
+          radial-gradient(circle at 22% 38%, rgba(0, 85, 255, 0.10), transparent 42%),
+          radial-gradient(circle at 78% 60%, rgba(27, 35, 48, 0.06), transparent 42%),
+          radial-gradient(rgba(27, 35, 48, 0.16) 1px, transparent 1.4px),
+          #ffffff;
+        background-size: 100% 100%, 100% 100%, 26px 26px;
+        background-attachment: fixed;
+      }
       #root { width: 100%; }
       .caption {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
