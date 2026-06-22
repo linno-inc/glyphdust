@@ -9,4 +9,11 @@
 /** ライブラリのバージョン（package.json と一致させる）。 */
 export const VERSION = "0.1.0";
 
-export {};
+// 文字 → 粒子ターゲット生成（Task-002）
+export {
+  buildTextTargets,
+  buildDenseTextTargets,
+  type Random,
+  type TextTargetOptions,
+  type DenseTextTargetOptions,
+} from "./sampling.js";
