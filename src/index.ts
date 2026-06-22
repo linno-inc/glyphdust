@@ -48,3 +48,18 @@ export {
 
 // reduced-motion（Task-005）
 export { useReducedMotion, prefersReducedMotion } from "./useReducedMotion.js";
+
+// 公開コンポーネント（Task-006）
+export { GlyphDust } from "./GlyphDust.js";
+
+// 公開型（Task-006 / 007）
+export type {
+  Keyframe,
+  TextKeyframe,
+  ScatterKeyframe,
+  GlyphColors,
+  GlyphCount,
+  GlyphCamera,
+  GlyphInteraction,
+  GlyphDustProps,
+} from "./types.js";
