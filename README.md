@@ -5,7 +5,7 @@
 Pass any text and glyphdust dissolves it into thousands of GPU particles, scatters them into a cloud, reforms them into the next glyph, and finally **resolves into crisp, real DOM text** — all driven by a single scroll progress `0 → 1`.
 
 <p align="center">
-  <img src="./docs/demo.gif" alt="glyphdust: text dissolving into particles and resolving into real text" width="720" />
+  <img src="https://raw.githubusercontent.com/NOGUCHILin/glyphdust/main/docs/demo.gif" alt="glyphdust: text dissolving into particles and resolving into real text" width="720" />
 </p>
 
 ```tsx
