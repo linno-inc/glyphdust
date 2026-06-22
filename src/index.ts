@@ -25,3 +25,13 @@ export {
   glyphPositionAttribute,
   GLYPH_POSITION_ATTRIBUTE_PREFIX,
 } from "./shaders.js";
+
+// DOM 重ね合わせ・幾何（Task-004）
+export {
+  viewSizeAtZ0,
+  buildGlyphFromDOM,
+  computeScreenRect,
+  type ViewSize,
+  type DomGlyphOptions,
+  type GlyphScreenRect,
+} from "./dom-overlay.js";
