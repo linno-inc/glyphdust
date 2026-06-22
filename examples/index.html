@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>glyphdust — demo</title>
+    <style>
+      :root { color-scheme: light; }
+      * { margin: 0; box-sizing: border-box; }
+      html, body { background: #fafbfc; color: #1b2330; font-family: system-ui, sans-serif; }
+      #root { width: 100%; }
+      .caption {
+        position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+        font-size: 13px; letter-spacing: 0.04em; opacity: 0.55; z-index: 10;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div class="caption">scroll ↓ — text → particles → glyph → real text</div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
