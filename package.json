@@ -1,0 +1,74 @@
+{
+  "name": "glyphdust",
+  "version": "0.1.0",
+  "description": "Scroll-driven text → particles → glyph → real-text resolve, in one declarative React Three Fiber component.",
+  "type": "module",
+  "license": "MIT",
+  "author": "LINNO (NOGUCHILin)",
+  "homepage": "https://github.com/NOGUCHILin/glyphdust#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NOGUCHILin/glyphdust.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NOGUCHILin/glyphdust/issues"
+  },
+  "keywords": [
+    "particles",
+    "text-animation",
+    "scroll",
+    "three",
+    "three.js",
+    "react-three-fiber",
+    "r3f",
+    "webgl",
+    "glyph",
+    "morph",
+    "hero",
+    "shader"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": ">=8",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "three": ">=0.160"
+  },
+  "devDependencies": {
+    "@react-three/fiber": "^9.6.1",
+    "@types/react": "^19.0.0",
+    "@types/three": "^0.184.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "three": "^0.184.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
