@@ -194,11 +194,15 @@ export function GlyphPoints(props: GlyphPointsProps) {
   const n = keyframes.length;
 
   // 各キーフレームの正規化時刻（補間境界）。
+  // 既定: 最終キーフレームが text の場合は 0.85 で形成し切り、0.85→1.0 を「くっきり保持」区間にする
+  //（最後の瞬間まで雲のままにせず、字形を読ませる／フィナーレ解決へ綺麗に受け渡すため）。
   const times = useMemo<number[]>(() => {
     if (timing && timing.length === n) return timing.slice();
     if (n <= 1) return [0];
-    return Array.from({ length: n }, (_, i) => i / (n - 1));
-  }, [timing, n]);
+    const lastIsText = keyframes[n - 1]?.type === "text";
+    const end = lastIsText ? 0.85 : 1;
+    return Array.from({ length: n }, (_, i) => (i / (n - 1)) * end);
+  }, [timing, n, keyframes]);
 
   // タイムライン上の意味論（どこが text / scatter か、解決の有無）。
   const timeline = useMemo(() => {
