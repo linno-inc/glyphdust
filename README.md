@@ -4,7 +4,6 @@
 
 Pass any text and glyphdust dissolves it into thousands of GPU particles, scatters them into a cloud, reforms them into the next glyph, and finally **resolves into crisp, real DOM text** — all driven by a single scroll progress `0 → 1`.
 
-<!-- TODO: ヒーローGIFをここに差し込む（推奨: 1200px幅 / 6〜8秒 / 文字→粒子→飛散→LINNO→実文字） -->
 <p align="center">
   <img src="./docs/demo.gif" alt="glyphdust: text dissolving into particles and resolving into real text" width="720" />
 </p>
