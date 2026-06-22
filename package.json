@@ -5,13 +5,13 @@
   "type": "module",
   "license": "MIT",
   "author": "LINNO (NOGUCHILin)",
-  "homepage": "https://github.com/NOGUCHILin/glyphdust#readme",
+  "homepage": "https://github.com/linno/glyphdust#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NOGUCHILin/glyphdust.git"
+    "url": "git+https://github.com/linno/glyphdust.git"
   },
   "bugs": {
-    "url": "https://github.com/NOGUCHILin/glyphdust/issues"
+    "url": "https://github.com/linno/glyphdust/issues"
   },
   "keywords": [
     "particles",
