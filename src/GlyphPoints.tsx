@@ -35,6 +35,30 @@ export interface ResolvedColors {
   accentRatio: number;
 }
 
+/**
+ * シェーダの uniform 群（型付き）。
+ * r3f は `uniforms` prop をクローンしてマテリアルへ適用するため、
+ * 毎フレームの更新は必ず `material.uniforms`（このクローン側）を直接ミューテートする。
+ * 元の useMemo オブジェクトを更新しても GPU には届かない。
+ */
+interface GlyphUniforms {
+  uTime: THREE.IUniform<number>;
+  uStage: THREE.IUniform<number>;
+  uTimes: THREE.IUniform<number[]>;
+  uForm: THREE.IUniform<number>;
+  uSettle: THREE.IUniform<number>;
+  uBurst: THREE.IUniform<number>;
+  uSwap: THREE.IUniform<number>;
+  uResolve: THREE.IUniform<number>;
+  uReduced: THREE.IUniform<number>;
+  uPointer: THREE.IUniform<THREE.Vector3>;
+  uPointerActive: THREE.IUniform<number>;
+  uSize: THREE.IUniform<number>;
+  uPixelRatio: THREE.IUniform<number>;
+  uColorInk: THREE.IUniform<THREE.Color>;
+  uColorAccent: THREE.IUniform<THREE.Color>;
+}
+
 /** GlyphPoints が解決済みで受け取る設定。 */
 export interface GlyphPointsProps {
   keyframes: Keyframe[];
@@ -363,16 +387,20 @@ export function GlyphPoints(props: GlyphPointsProps) {
     };
   }, [gl, pointerEnabled, dragEnabled]);
 
-  // 解像度に応じた点サイズ。
+  // 解像度に応じた点サイズ。マテリアル側 uniforms（クローン）を更新する。
   useEffect(() => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    uniforms.uPixelRatio.value = dpr;
-    uniforms.uSize.value = Math.min(size.height / 18, 26);
-  }, [size, uniforms]);
+    const mat = matRef.current;
+    if (!mat) return;
+    const u = mat.uniforms as unknown as GlyphUniforms;
+    u.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2);
+    u.uSize.value = Math.min(size.height / 18, 26);
+  }, [size]);
 
   useFrame((state, delta) => {
     const p = pointsRef.current;
-    if (!p) return;
+    const mat = matRef.current;
+    if (!p || !mat) return;
+    const u = mat.uniforms as unknown as GlyphUniforms;
     const d = Math.min(delta, 0.05);
 
     const raw = THREE.MathUtils.clamp(getProgress(), 0, 1);
@@ -403,20 +431,16 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const swapped = raw >= timeline.swapAt ? 1 : 0;
     const resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
 
-    uniforms.uTime.value = state.clock.elapsedTime;
-    uniforms.uStage.value = s;
-    uniforms.uForm.value = form;
-    uniforms.uSettle.value = settle;
-    uniforms.uBurst.value = burst * (1 - form);
-    uniforms.uSwap.value = swapped;
-    uniforms.uResolve.value = resolve;
+    u.uTime.value = state.clock.elapsedTime;
+    u.uStage.value = s;
+    u.uForm.value = form;
+    u.uSettle.value = settle;
+    u.uBurst.value = burst * (1 - form);
+    u.uSwap.value = swapped;
+    u.uResolve.value = resolve;
 
-    uniforms.uPointer.value.set(
-      pointer.current.x * 3.2,
-      pointer.current.y * 2.0,
-      0,
-    );
-    uniforms.uPointerActive.value = pointer.current.active * (1.0 - guard);
+    u.uPointer.value.set(pointer.current.x * 3.2, pointer.current.y * 2.0, 0);
+    u.uPointerActive.value = pointer.current.active * (1.0 - guard);
 
     // ドラッグ回転（慣性 + 飛散時の自転 + 字形整列で正面復帰）。
     rot.current.x += rot.current.vx;

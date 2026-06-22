@@ -131,7 +131,7 @@ ${mixChain}
       vec3 diff = world.xyz - uPointer;
       float dist = length(diff);
       float radius = 1.3;
-      float force = smoothstep(radius, 0.0, dist) * 0.55;
+      float force = (1.0 - smoothstep(0.0, radius, dist)) * 0.55;
       world.xyz += normalize(diff + 0.0001) * force;
     }
 
@@ -151,6 +151,7 @@ ${mixChain}
     float s = uSize * sizeVar;
     gl_PointSize = s * uPixelRatio * (1.0 / -mvPosition.z);
     gl_PointSize = clamp(gl_PointSize, 1.0, mix(7.0, 9.0, uForm) * uPixelRatio);
+    gl_PointSize = 10.0; // DEBUG4
   }
 `;
 }
@@ -171,12 +172,10 @@ export const FRAGMENT_SHADER = /* glsl */ `
   varying float vSettle;
 
   void main() {
-    if (vAlpha < 0.01) discard;
-
-    // 円形のソフトな点。
+    // 円形のソフトな点。中心で 1、縁で 0（smoothstep は edge0<edge1 必須なので反転して使う）。
     vec2 uv = gl_PointCoord - 0.5;
     float r = length(uv);
-    float alpha = smoothstep(0.5, 0.12, r);
+    float alpha = 1.0 - smoothstep(0.12, 0.5, r);
     if (alpha < 0.02) discard;
 
     // 主体はインク、一部の粒だけアクセント色。字形収束時はやや控えめに。
