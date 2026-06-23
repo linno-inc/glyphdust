@@ -53,6 +53,13 @@ export interface DomGlyphOptions {
   thickness?: number;
   /** ベースライン近似に使うアセント比（fontSize に対する）。既定 0.82。 */
   ascentRatio?: number;
+  /**
+   * 実際の canvas 表示サイズ（CSS px）。省略時は window.innerWidth/Height。
+   * 縦スクロールバーがあると innerWidth と canvas 幅が数 px ずれ、
+   * 画面→ワールド変換が狂って粒子字形が横にずれる。整列には canvas 実寸を渡す。
+   */
+  viewportW?: number;
+  viewportH?: number;
   /** 乱数生成器（ジッタ用）。既定 `Math.random`。 */
   random?: Random;
 }
@@ -121,11 +128,21 @@ export function buildGlyphFromDOM(
     }
   }
 
-  // CSS の行ボックスは中央寄せなので、ベースライン ≈ 行頂点 + (lineHeight - fontSize)/2 + ascent。
-  const ascent = fontSize * (opts.ascentRatio ?? 0.82);
+  // ベースライン位置をブラウザの行レイアウトに正確に合わせる。
+  // 行ボックス内では baseline = 行頂点 + half-leading + fontAscent。
+  // フォントの実アセント/ディセントは canvas の measureText から取得する
+  // （近似 ascentRatio=0.82 では実フォントと数 px ずれ、DOM 整列が崩れるため）。
+  const fm = ctx.measureText(lines[0] ?? "M");
+  const fbAsc = fm.fontBoundingBoxAscent;
+  const fbDesc = fm.fontBoundingBoxDescent;
+  const useMetrics = Number.isFinite(fbAsc) && Number.isFinite(fbDesc);
+  const fallbackAscent = fontSize * (opts.ascentRatio ?? 0.82);
   lines.forEach((line, i) => {
     const lineTop = i * lineHeight;
-    ctx.fillText(line, 0, lineTop + (lineHeight - fontSize) / 2 + ascent);
+    const baseline = useMetrics
+      ? lineTop + (lineHeight - (fbAsc + fbDesc)) / 2 + fbAsc
+      : lineTop + (lineHeight - fontSize) / 2 + fallbackAscent;
+    ctx.fillText(line, 0, baseline);
   });
 
   const { data } = ctx.getImageData(0, 0, cw, ch);
@@ -140,8 +157,9 @@ export function buildGlyphFromDOM(
   if (filled === 0) return null;
 
   // 画面(px) → ワールド(z=0) 変換係数。canvas は sticky で viewport 全面。
-  const vpW = window.innerWidth;
-  const vpH = window.innerHeight;
+  // スクロールバー分のズレを避けるため、可能なら canvas 実寸を使う。
+  const vpW = opts.viewportW ?? window.innerWidth;
+  const vpH = opts.viewportH ?? window.innerHeight;
   const { worldW, worldH } = viewSizeAtZ0(vpW, vpH, opts.fovDeg, opts.cameraZ);
   const pxToWorld = worldW / vpW; // = worldH / vpH（等方）
   const thickness = opts.thickness ?? 0.14;

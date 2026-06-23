@@ -73,6 +73,12 @@ export interface GlyphPointsProps {
   timing?: number[] | undefined;
   /** resolveToDom 用の実文字オーバーレイ要素。 */
   resolveRef?: RefObject<HTMLDivElement | null> | undefined;
+  /**
+   * resolveToDom の解決先が「ユーザーの実 DOM 要素」のときのセレクタ。
+   * 指定時は自前オーバーレイを使わず、粒子がピクセル整列している
+   * その実要素の不透明度を直接フェードする（整列が原理保証される）。
+   */
+  resolveDomSelector?: string | undefined;
 }
 
 const DEFAULT_TEXT_FONT =
@@ -178,9 +184,12 @@ export function GlyphPoints(props: GlyphPointsProps) {
     getProgress,
     timing,
     resolveRef,
+    resolveDomSelector,
   } = props;
 
   const pointsRef = useRef<THREE.Points>(null);
+  // domSelector 解決先の実 DOM 要素をキャッシュ（毎フレーム querySelector を避ける）。
+  const resolveDomElRef = useRef<HTMLElement | null>(null);
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const { size, gl } = useThree();
 
@@ -282,7 +291,11 @@ export function GlyphPoints(props: GlyphPointsProps) {
     [vertexShader],
   );
 
-  // resolveToDom: 実文字オーバーレイの位置を最終キーフレームの矩形に合わせる。
+  // resolveToDom: 実文字オーバーレイを粒子グリフにピクセル整列させる。
+  // 粒子グリフは最終キーフレームのフォント（既定 Helvetica Neue 900）でサンプリングされる。
+  // クロスフェードで字形がズレないよう、実文字も同じフォントファミリ／ウェイトにし、
+  // フォントサイズは「高さ基準」ではなく「粒子グリフの実幅にフィット」させる
+  // （幅広ワードマークは高さ基準だと痩せて中央に縮こまるため）。
   const positionOverlay = () => {
     const el = resolveRef?.current;
     if (!el || !timeline.hasResolve) return;
@@ -293,11 +306,112 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const { worldW: visW } = viewSizeAtZ0(vpW, vpH, cameraFov, cameraZ);
     const rect = computeScreenRect(finalBuf, vpW, vpH, visW);
     if (!rect) return;
-    el.style.left = `${rect.left}px`;
-    el.style.top = `${rect.top}px`;
-    el.style.width = `${rect.width}px`;
-    el.style.height = `${rect.height}px`;
-    el.style.fontSize = `${rect.height * 0.92}px`;
+
+    // 最終キーフレームのフォント文字列から family / weight を取り出す
+    // （例 "900 260px 'Helvetica Neue', Helvetica, Arial, sans-serif"）。
+    const finalKf = keyframes[n - 1];
+    const fontStr =
+      finalKf?.type === "text" && finalKf.font
+        ? finalKf.font
+        : DEFAULT_DENSE_FONT;
+    const fontMatch = fontStr.match(/^\s*(\d+)\s+[\d.]+px\s+(.+)$/);
+    const fontWeight = fontMatch?.[1] ?? "900";
+    const fontFamily = fontMatch?.[2] ?? "sans-serif";
+
+    // 実文字を粒子グリフへ厳密整列させる。
+    // 字送り幅(advance)ではなく「実際のインク範囲」をオフスクリーン canvas で
+    // ピクセル走査し、インクの中心を粒子グリフ矩形の中心へ合わせる。
+    // （L と O など左右ベアリングが非対称な語は advance 基準だと横にズレる。）
+    const text = timeline.resolveText;
+    const ctx = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    });
+
+    let positioned = false;
+    if (ctx && text) {
+      // 1) 基準サイズで描いて塗りピクセルの bbox を実測。
+      const baseSize = 200;
+      ctx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
+      const advBase = ctx.measureText(text).width;
+      const pad = Math.ceil(baseSize * 0.6);
+      const cw = Math.ceil(advBase + pad * 2);
+      const ch = Math.ceil(baseSize * 1.8);
+      const oc = document.createElement("canvas");
+      oc.width = cw;
+      oc.height = ch;
+      const octx = oc.getContext("2d", { willReadFrequently: true });
+      if (octx) {
+        const drawX = pad;
+        const drawY = Math.round(ch * 0.72);
+        octx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
+        octx.textAlign = "left";
+        octx.textBaseline = "alphabetic";
+        octx.fillStyle = "#000";
+        octx.fillText(text, drawX, drawY);
+        const data = octx.getImageData(0, 0, cw, ch).data;
+        let minX = cw;
+        let maxX = 0;
+        let minY = ch;
+        let maxY = 0;
+        let found = 0;
+        for (let y = 0; y < ch; y++) {
+          for (let x = 0; x < cw; x++) {
+            if (data[(y * cw + x) * 4 + 3]! > 20) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+              found++;
+            }
+          }
+        }
+        if (found > 0) {
+          // 2) インク幅を粒子グリフ幅に合わせて fontSize を決定。
+          const fontSize = baseSize * (rect.width / (maxX - minX));
+          const scale = fontSize / baseSize;
+          // 描画原点(text 先頭, baseline)基準のインク中心オフセット（fitted px）。
+          const inkCenterXFromStart = ((minX + maxX) / 2 - drawX) * scale;
+          const inkCenterYFromBaseline = ((minY + maxY) / 2 - drawY) * scale;
+          // line-height:1 のときの「要素頂点 → ベースライン」距離。
+          ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+          const fm = ctx.measureText(text);
+          const leading = fontSize - (fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent);
+          const baselineFromTop = leading / 2 + fm.fontBoundingBoxAscent;
+          // 3) インク中心 = 粒子グリフ矩形の中心 となるよう left/top を決める。
+          const targetCx = rect.left + rect.width / 2;
+          const targetCy = rect.top + rect.height / 2;
+          el.style.display = "block";
+          el.style.textAlign = "left";
+          el.style.whiteSpace = "nowrap";
+          el.style.width = "auto";
+          el.style.height = "auto";
+          el.style.fontFamily = fontFamily;
+          el.style.fontWeight = fontWeight;
+          el.style.fontSize = `${fontSize}px`;
+          el.style.left = `${targetCx - inkCenterXFromStart}px`;
+          el.style.top = `${targetCy - inkCenterYFromBaseline - baselineFromTop}px`;
+          positioned = true;
+        }
+      }
+    }
+
+    // フォールバック（canvas 不可）: 従来の矩形フィット。
+    if (!positioned) {
+      const measureSize = 100;
+      let fontSize = rect.height * 0.92;
+      if (ctx && text) {
+        ctx.font = `${fontWeight} ${measureSize}px ${fontFamily}`;
+        const w = ctx.measureText(text).width;
+        if (w > 0) fontSize = measureSize * (rect.width / w);
+      }
+      el.style.left = `${rect.left}px`;
+      el.style.top = `${rect.top}px`;
+      el.style.width = `${rect.width}px`;
+      el.style.height = `${rect.height}px`;
+      el.style.fontFamily = fontFamily;
+      el.style.fontWeight = fontWeight;
+      el.style.fontSize = `${fontSize}px`;
+    }
   };
 
   // 初回 / フォント読込 / リサイズで再サンプリング・再配置（DOM とピタリ重ねる）。
@@ -308,6 +422,10 @@ export function GlyphPoints(props: GlyphPointsProps) {
         selector: kf.domSelector,
         fovDeg: cameraFov,
         cameraZ,
+        // 粒子がレンダリングされる canvas の実寸（CSS px）。
+        // window.innerWidth だとスクロールバー分ずれるため size を使う。
+        viewportW: size.width,
+        viewportH: size.height,
       });
       if (!next) return;
       const attr = built.geo.getAttribute(glyphPositionAttribute(i)) as
@@ -433,7 +551,12 @@ export function GlyphPoints(props: GlyphPointsProps) {
     guardRef.current = guard;
 
     const swapped = raw >= timeline.swapAt ? 1 : 0;
+    // 粒子の消失（フェードアウト）。
     const resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
+    // 実文字の出現（フェードイン）は粒子の消失より少し遅らせる。
+    // 同じカーブだと粒子と実文字が同時に重なり二重像になるため、
+    // 「粒子が消えてから文字が立つ」クリーンな受け渡しにする（0.92→1.0）。
+    const textReveal = timeline.hasResolve ? smooth(0.92, 1.0, raw) : 0;
 
     u.uTime.value = state.clock.elapsedTime;
     u.uStage.value = s;
@@ -466,9 +589,19 @@ export function GlyphPoints(props: GlyphPointsProps) {
     p.rotation.x = rot.current.x;
     p.rotation.y = rot.current.y;
 
-    // resolveToDom: 実文字オーバーレイの不透明度を resolve に同期。
-    const overlay = resolveRef?.current;
-    if (overlay && timeline.hasResolve) overlay.style.opacity = String(resolve);
+    // resolveToDom: 解決先（自前オーバーレイ or 実 DOM 要素）の不透明度を
+    // textReveal（少し遅らせた出現）に同期する。
+    if (timeline.hasResolve) {
+      let target: HTMLElement | null = resolveRef?.current ?? null;
+      if (!target && resolveDomSelector) {
+        if (!resolveDomElRef.current) {
+          resolveDomElRef.current =
+            document.querySelector<HTMLElement>(resolveDomSelector);
+        }
+        target = resolveDomElRef.current;
+      }
+      if (target) target.style.opacity = String(textReveal);
+    }
   });
 
   return (

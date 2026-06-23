@@ -105,6 +105,15 @@ export function GlyphDust(props: GlyphDustProps) {
   const finalKf = keyframes[keyframes.length - 1];
   const hasResolve =
     finalKf?.type === "text" && finalKf.resolveToDom === true;
+  // 最終キーフレームが domSelector を持つなら、その「実 DOM 要素」へ解決する。
+  // 粒子はその要素にピクセル整列してサンプリングされる（最初の見出しと同じ仕組み）ため、
+  // 別オーバーレイをフィットさせる必要がなく、整列が原理的に保証される。
+  const resolveDomSelector =
+    finalKf?.type === "text" && finalKf.resolveToDom === true && finalKf.domSelector
+      ? finalKf.domSelector
+      : undefined;
+  // 自前オーバーレイを使うのは「resolveToDom かつ domSelector 無し」のときだけ。
+  const useOwnOverlay = hasResolve && !resolveDomSelector;
   const resolveText =
     finalKf?.type === "text" ? finalKf.text.replace(/\n/g, " ") : "";
 
@@ -132,10 +141,11 @@ export function GlyphDust(props: GlyphDustProps) {
           drag={dragEnabled}
           getProgress={getProgress}
           timing={timing}
-          resolveRef={hasResolve ? resolveRef : undefined}
+          resolveRef={useOwnOverlay ? resolveRef : undefined}
+          resolveDomSelector={resolveDomSelector}
         />
       </Canvas>
-      {hasResolve ? (
+      {useOwnOverlay ? (
         <div
           ref={resolveRef}
           aria-hidden="true"

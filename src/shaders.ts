@@ -151,7 +151,6 @@ ${mixChain}
     float s = uSize * sizeVar;
     gl_PointSize = s * uPixelRatio * (1.0 / -mvPosition.z);
     gl_PointSize = clamp(gl_PointSize, 1.0, mix(7.0, 9.0, uForm) * uPixelRatio);
-    gl_PointSize = 10.0; // DEBUG4
   }
 `;
 }
