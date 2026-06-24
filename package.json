@@ -1,6 +1,6 @@
 {
   "name": "glyphdust",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scroll-driven text → particles → glyph → real-text resolve, in one declarative React Three Fiber component.",
   "type": "module",
   "license": "MIT",
