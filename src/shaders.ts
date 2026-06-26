@@ -85,6 +85,8 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform vec3 uPointer;
   uniform float uPointerActive;
   uniform float uSize;
+  uniform float uSizeScale;
+  uniform float uDrift;
   uniform float uPixelRatio;
 
 ${attributeDecls}
@@ -120,7 +122,7 @@ ${mixChain}
 
     // アイドルの漂い（整列時 settle / 字形時 form で弱める）。
     vSettle = uSettle;
-    float drift = (1.0 - uReduced) * (1.0 - uSettle * 0.9) * (1.0 - uForm);
+    float drift = (1.0 - uReduced) * (1.0 - uSettle * 0.9) * (1.0 - uForm) * uDrift;
     pos.x += sin(uTime * 0.35 + ph) * 0.06 * drift;
     pos.y += cos(uTime * 0.30 + ph * 1.7) * 0.06 * drift;
     pos.z += sin(uTime * 0.27 + ph * 2.3) * 0.06 * drift;
@@ -150,7 +152,7 @@ ${mixChain}
     sizeVar = mix(sizeVar, 0.95 + aSeed * 0.18, uForm);
     // 高 dpr 環境では小粒・上限低めの方がエッジが締まり高精細に見える
     // （コーポレートサイト実装で実証。0.62 と clamp 4〜5 が最も「霞まない」）。
-    float s = uSize * sizeVar * 0.62;
+    float s = uSize * sizeVar * 0.62 * uSizeScale;
     gl_PointSize = s * uPixelRatio * (1.0 / -mvPosition.z);
     gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.0, uForm) * uPixelRatio);
   }
@@ -164,6 +166,7 @@ ${mixChain}
 export const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorInk;
   uniform vec3 uColorAccent;
+  uniform float uSparkle;
 
   varying float vSeed;
   varying float vAccent;
@@ -185,7 +188,7 @@ export const FRAGMENT_SHADER = /* glsl */ `
 
     // 一部の粒に明るいきらめき（飛散時に映える）。整列時は控えめ。
     float spark = step(0.94, vSeed);
-    col = mix(col, uColorAccent, spark * mix(0.45, 0.15, vSettle));
+    col = mix(col, uColorAccent, spark * mix(0.45, 0.15, vSettle) * uSparkle);
 
     // 奥行きで濃淡（明背景での視認性確保のため下限を持たせる）。
     float floorFade = mix(0.45, 0.78, vSettle);

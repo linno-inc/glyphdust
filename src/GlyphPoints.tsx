@@ -35,6 +35,14 @@ export interface ResolvedColors {
   accentRatio: number;
 }
 
+/** GlyphPoints が解決済みで受け取る質感（プリセット＋上書き済み）。 */
+export interface ResolvedStyle {
+  size: number;
+  blend: "normal" | "additive";
+  drift: number;
+  sparkle: number;
+}
+
 /**
  * シェーダの uniform 群（型付き）。
  * r3f は `uniforms` prop をクローンしてマテリアルへ適用するため、
@@ -54,6 +62,9 @@ interface GlyphUniforms {
   uPointer: THREE.IUniform<THREE.Vector3>;
   uPointerActive: THREE.IUniform<number>;
   uSize: THREE.IUniform<number>;
+  uSizeScale: THREE.IUniform<number>;
+  uDrift: THREE.IUniform<number>;
+  uSparkle: THREE.IUniform<number>;
   uPixelRatio: THREE.IUniform<number>;
   uColorInk: THREE.IUniform<THREE.Color>;
   uColorAccent: THREE.IUniform<THREE.Color>;
@@ -64,6 +75,7 @@ export interface GlyphPointsProps {
   keyframes: Keyframe[];
   count: number;
   colors: ResolvedColors;
+  style: ResolvedStyle;
   cameraZ: number;
   cameraFov: number;
   pointer: boolean;
@@ -177,6 +189,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     keyframes,
     count,
     colors,
+    style,
     cameraZ,
     cameraFov,
     pointer: pointerEnabled,
@@ -283,6 +296,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uPointer: { value: new THREE.Vector3(0, 0, 0) },
       uPointerActive: { value: 0 },
       uSize: { value: 1 },
+      uSizeScale: { value: style.size },
+      uDrift: { value: style.drift },
+      uSparkle: { value: style.sparkle },
       uPixelRatio: { value: 1 },
       uColorInk: { value: colors.ink.clone() },
       uColorAccent: { value: colors.accent.clone() },
@@ -518,6 +534,22 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uSize.value = Math.min(size.height / 18, 26);
   }, [size]);
 
+  // 質感（プリセット＋上書き）をマテリアル uniforms / 合成モードへ反映。
+  // uniforms メモは vertexShader にしか依存しないため、style 変化はここで同期する。
+  useEffect(() => {
+    const mat = matRef.current;
+    if (!mat) return;
+    const u = mat.uniforms as unknown as GlyphUniforms;
+    u.uSizeScale.value = style.size;
+    u.uDrift.value = style.drift;
+    u.uSparkle.value = style.sparkle;
+    mat.blending =
+      style.blend === "additive"
+        ? THREE.AdditiveBlending
+        : THREE.NormalBlending;
+    mat.needsUpdate = true;
+  }, [style.size, style.drift, style.sparkle, style.blend]);
+
   useFrame((state, delta) => {
     const p = pointsRef.current;
     const mat = matRef.current;
@@ -620,7 +652,11 @@ export function GlyphPoints(props: GlyphPointsProps) {
         uniforms={uniforms}
         transparent
         depthWrite={false}
-        blending={THREE.NormalBlending}
+        blending={
+          style.blend === "additive"
+            ? THREE.AdditiveBlending
+            : THREE.NormalBlending
+        }
         vertexShader={vertexShader}
         fragmentShader={FRAGMENT_SHADER}
       />

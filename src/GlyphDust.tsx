@@ -9,10 +9,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 
-import { GlyphPoints, type ResolvedColors } from "./GlyphPoints.js";
+import { GlyphPoints, type ResolvedColors, type ResolvedStyle } from "./GlyphPoints.js";
 import { DEFAULT_TRIGGER_HEIGHT, computeAutoplayProgress } from "./drivers.js";
 import { useReducedMotion } from "./useReducedMotion.js";
-import type { GlyphDustProps } from "./types.js";
+import type { GlyphDustProps, GlyphPreset } from "./types.js";
 
 const DEFAULT_INK = "#1b2330";
 const DEFAULT_ACCENT = "#0055ff";
@@ -22,6 +22,14 @@ const DEFAULT_COUNT_MOBILE = 5200;
 const DEFAULT_CAMERA_Z = 7;
 const DEFAULT_CAMERA_FOV = 42;
 const DEFAULT_DPR: [number, number] = [1, 1.75];
+
+/** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
+const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5 },
+};
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -45,6 +53,8 @@ export function GlyphDust(props: GlyphDustProps) {
   const {
     keyframes,
     driver = { type: "scroll" },
+    preset = "default",
+    style,
     colors,
     count,
     dpr = DEFAULT_DPR,
@@ -129,6 +139,17 @@ export function GlyphDust(props: GlyphDustProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driver]);
 
+  // プリセット＋上書き: プリセットを土台に、style で指定された項目だけ上書き。
+  const resolvedStyle = useMemo<ResolvedStyle>(() => {
+    const base = PRESETS[preset] ?? PRESETS.default;
+    return {
+      size: style?.size ?? base.size,
+      blend: style?.blend ?? base.blend,
+      drift: style?.drift ?? base.drift,
+      sparkle: style?.sparkle ?? base.sparkle,
+    };
+  }, [preset, style?.size, style?.blend, style?.drift, style?.sparkle]);
+
   const resolvedColors = useMemo<ResolvedColors>(
     () => ({
       ink: new THREE.Color(colors?.ink ?? DEFAULT_INK),
@@ -180,6 +201,7 @@ export function GlyphDust(props: GlyphDustProps) {
           keyframes={keyframes}
           count={particleCount}
           colors={resolvedColors}
+          style={resolvedStyle}
           cameraZ={cameraZ}
           cameraFov={cameraFov}
           pointer={pointerEnabled}

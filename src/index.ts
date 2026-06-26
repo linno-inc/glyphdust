@@ -59,6 +59,8 @@ export type {
   TextKeyframe,
   ScatterKeyframe,
   GlyphColors,
+  GlyphStyle,
+  GlyphPreset,
   GlyphCount,
   GlyphCamera,
   GlyphInteraction,
