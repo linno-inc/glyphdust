@@ -76,6 +76,8 @@ export function App() {
         人じゃない。
       </h1>
 
+      {/* autoplay デモ: scroll 不要・親の箱にフィット・画面内で自動再生。
+          「普通にテキストとして、どんな箱にも置いて勝手に動かす」最小例。 */}
       <section
         style={{
           minHeight: "100vh",
@@ -86,12 +88,20 @@ export function App() {
         }}
       >
         <div>
-          <h2 style={{ fontSize: "clamp(28px, 4vw, 56px)", fontWeight: 800 }}>
-            glyphdust
-          </h2>
+          <div style={{ width: "min(560px, 80vw)", height: 240, margin: "0 auto" }}>
+            <GlyphDust
+              driver={{ type: "autoplay", duration: 3.5, loop: true, pingpong: true }}
+              preset="minimal"
+              keyframes={[
+                { type: "scatter", spread: 0.9 },
+                { type: "text", text: "glyphdust", dense: true },
+              ]}
+              colors={{ ink: "#1b2330", accent: "#1b2330", accentRatio: 0 }}
+            />
+          </div>
           <p style={{ marginTop: 16, opacity: 0.65, maxWidth: 560 }}>
-            Scroll-driven text → particles → glyph → real-text resolve, in one
-            declarative react-three-fiber component.
+            ↑ <code>driver="autoplay"</code> + <code>preset="minimal"</code>. No
+            scroll, no setup — drop it in any box and it plays in view.
           </p>
         </div>
       </section>
