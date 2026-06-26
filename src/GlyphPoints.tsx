@@ -514,7 +514,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const mat = matRef.current;
     if (!mat) return;
     const u = mat.uniforms as unknown as GlyphUniforms;
-    u.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2);
+    u.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 3);
     u.uSize.value = Math.min(size.height / 18, 26);
   }, [size]);
 
@@ -526,7 +526,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const d = Math.min(delta, 0.05);
 
     const raw = THREE.MathUtils.clamp(getProgress(), 0, 1);
-    stage.current = THREE.MathUtils.lerp(stage.current, raw, 0.1);
+    // スクロール進捗を直接ステージに反映（lerp 追従は間延びの原因になる）。
+    // 慣性は driver 側（Lenis 等）で付けるのが正しい役割分担。
+    stage.current = raw;
     const s = stage.current;
 
     // --- 補間スカラ（CPU 側で意味論を解決し uniform へ） ---
@@ -546,6 +548,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const lastIsText = timeline.isText[n - 1] === true;
     if (lastIsText && n >= 2) {
       form = smooth(times[n - 2] ?? 0, times[n - 1] ?? 1, s);
+    }
+    // 先頭キーフレームが text のとき: 冒頭は「字形が締まった」状態から始め、
+    // 最初の遷移で解けていく。これがないと「実文字が消えてから粒子が湧く」空白が出る。
+    const firstIsText = timeline.isText[0] === true;
+    if (firstIsText && n >= 2) {
+      const formStart = 1 - smooth(times[0] ?? 0, times[1] ?? 1, s);
+      form = Math.max(form, formStart);
     }
     const guard = THREE.MathUtils.clamp(Math.max(settle, form), 0, 1);
     guardRef.current = guard;

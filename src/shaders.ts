@@ -148,9 +148,11 @@ ${mixChain}
     float sizeVar = mix(0.55 + aSeed * 0.9, 0.72 + aSeed * 0.35, uSettle);
     // 字形収束時は隣接粒子で隙間を埋めるためわずかに大きめ＆均一に。
     sizeVar = mix(sizeVar, 0.95 + aSeed * 0.18, uForm);
-    float s = uSize * sizeVar;
+    // 高 dpr 環境では小粒・上限低めの方がエッジが締まり高精細に見える
+    // （コーポレートサイト実装で実証。0.62 と clamp 4〜5 が最も「霞まない」）。
+    float s = uSize * sizeVar * 0.62;
     gl_PointSize = s * uPixelRatio * (1.0 / -mvPosition.z);
-    gl_PointSize = clamp(gl_PointSize, 1.0, mix(7.0, 9.0, uForm) * uPixelRatio);
+    gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.0, uForm) * uPixelRatio);
   }
 `;
 }
