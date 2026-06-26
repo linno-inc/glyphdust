@@ -35,14 +35,16 @@ export {
   type GlyphScreenRect,
 } from "./dom-overlay.js";
 
-// 進捗ドライバ（Task-005）
+// 進捗ドライバ
 export {
   createScrollProgress,
   useScrollProgress,
+  computeAutoplayProgress,
   DEFAULT_TRIGGER_HEIGHT,
   type DriverConfig,
   type ScrollDriverConfig,
   type ManualDriverConfig,
+  type AutoplayDriverConfig,
 } from "./drivers.js";
 
 // reduced-motion（Task-005）

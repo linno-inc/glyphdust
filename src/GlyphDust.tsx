@@ -10,7 +10,7 @@ import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { GlyphPoints, type ResolvedColors } from "./GlyphPoints.js";
-import { DEFAULT_TRIGGER_HEIGHT } from "./drivers.js";
+import { DEFAULT_TRIGGER_HEIGHT, computeAutoplayProgress } from "./drivers.js";
 import { useReducedMotion } from "./useReducedMotion.js";
 import type { GlyphDustProps } from "./types.js";
 
@@ -74,15 +74,60 @@ export function GlyphDust(props: GlyphDustProps) {
   const manualRef = useRef(0);
   if (driver.type === "manual") manualRef.current = clamp01(driver.progress);
 
+  // autoplay 用: 再生中フラグと開始時刻（playOnView の場合は画面内で起動）。
+  const autoplay = driver.type === "autoplay" ? driver : null;
+  const playingRef = useRef(false);
+  const startMsRef = useRef<number | null>(null);
+  const lastAutoRef = useRef(0);
+
+  // autoplay: playOnView が false なら即再生、true なら IntersectionObserver で起動。
+  useEffect(() => {
+    if (!autoplay) return;
+    if (autoplay.playOnView === false) {
+      playingRef.current = true;
+      return;
+    }
+    const el = wrapperRef.current;
+    if (el === null || typeof IntersectionObserver === "undefined") {
+      playingRef.current = true; // 観測不可なら無条件再生（真っ白防止）。
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && !playingRef.current) {
+            playingRef.current = true;
+            startMsRef.current = null; // 入った瞬間を開始点に。
+          }
+        }
+      },
+      { threshold: 0.25 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // duration/loop 等の変化では貼り直し不要（毎フレーム参照するため）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay?.playOnView]);
+
   const getProgress = useCallback(() => {
     if (driver.type === "manual") return manualRef.current;
+    if (driver.type === "autoplay") {
+      if (!playingRef.current || typeof performance === "undefined") {
+        return lastAutoRef.current;
+      }
+      if (startMsRef.current === null) startMsRef.current = performance.now();
+      const elapsed = (performance.now() - startMsRef.current) / 1000;
+      lastAutoRef.current = computeAutoplayProgress(elapsed, driver);
+      return lastAutoRef.current;
+    }
     const el = wrapperRef.current;
     if (el === null || typeof window === "undefined") return 0;
     const rect = el.getBoundingClientRect();
     const total = rect.height - window.innerHeight;
     if (total <= 0) return 0;
     return clamp01(-rect.top / total);
-  }, [driver.type]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driver]);
 
   const resolvedColors = useMemo<ResolvedColors>(
     () => ({
@@ -168,10 +213,12 @@ export function GlyphDust(props: GlyphDustProps) {
     </>
   );
 
-  // manual: 親要素にフィット。scroll: 背の高いラッパー + sticky 内枠。
-  if (driver.type === "manual") {
+  // manual / autoplay: 親要素にフィット（どんな箱にも置ける）。
+  // scroll のみ背の高いラッパー + sticky 内枠でフルスクリーン演出。
+  if (driver.type === "manual" || driver.type === "autoplay") {
     return (
       <div
+        ref={wrapperRef}
         className={className}
         style={{ position: "relative", width: "100%", height: "100%" }}
       >
