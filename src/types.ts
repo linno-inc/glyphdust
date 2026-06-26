@@ -71,6 +71,34 @@ export interface GlyphCamera {
   fov?: number;
 }
 
+/**
+ * 粒子の見た目・モーションの質感。
+ * すべて省略可。{@link GlyphPreset} の上に個別上書きできる（プリセット＋上書き）。
+ */
+export interface GlyphStyle {
+  /** 点サイズ倍率。既定 1。大きいほど太い粒（可読性↓・密度感↑）。 */
+  size?: number;
+  /**
+   * 合成モード。
+   *  - `"normal"`（既定）… 明背景で可読性が高い。
+   *  - `"additive"` … 重なりで発光する。暗背景のアンビエント/グロー向け。
+   */
+  blend?: "normal" | "additive";
+  /** アイドル/飛散時の漂い量 0..1。既定 1。0 で静止（端正）。 */
+  drift?: number;
+  /** きらめく粒の強さ 0..1。既定 1。0 で無効（ミニマル）。 */
+  sparkle?: number;
+}
+
+/**
+ * 質感プリセット。`style` で部分上書きできる。
+ *  - `"default"` … 現行の標準（バランス型）。
+ *  - `"minimal"` … 漂い・きらめき控えめで端正。明背景の本文向け。
+ *  - `"lively"`  … 漂い・きらめき強めで躍動的。
+ *  - `"glow"`    … additive 合成の発光。暗背景のヒーロー/アンビエント向け。
+ */
+export type GlyphPreset = "default" | "minimal" | "lively" | "glow";
+
 /** インタラクション設定。 */
 export interface GlyphInteraction {
   /** ポインタ追従（近傍反発）。既定 true。 */
@@ -85,6 +113,10 @@ export interface GlyphDustProps {
   keyframes: Keyframe[];
   /** 進捗ドライバ。既定 `{ type: "scroll" }`。 */
   driver?: DriverConfig;
+  /** 質感プリセット。既定 `"default"`。`style` で部分上書き可。 */
+  preset?: GlyphPreset;
+  /** 粒子の見た目・モーションの個別上書き（プリセットより優先）。 */
+  style?: GlyphStyle;
   /** 配色。 */
   colors?: GlyphColors;
   /** デバイス別粒子数。 */

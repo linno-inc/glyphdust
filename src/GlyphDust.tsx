@@ -9,10 +9,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 
-import { GlyphPoints, type ResolvedColors } from "./GlyphPoints.js";
-import { DEFAULT_TRIGGER_HEIGHT } from "./drivers.js";
+import { GlyphPoints, type ResolvedColors, type ResolvedStyle } from "./GlyphPoints.js";
+import { DEFAULT_TRIGGER_HEIGHT, computeAutoplayProgress } from "./drivers.js";
 import { useReducedMotion } from "./useReducedMotion.js";
-import type { GlyphDustProps } from "./types.js";
+import type { GlyphDustProps, GlyphPreset } from "./types.js";
 
 const DEFAULT_INK = "#1b2330";
 const DEFAULT_ACCENT = "#0055ff";
@@ -22,6 +22,14 @@ const DEFAULT_COUNT_MOBILE = 5200;
 const DEFAULT_CAMERA_Z = 7;
 const DEFAULT_CAMERA_FOV = 42;
 const DEFAULT_DPR: [number, number] = [1, 1.75];
+
+/** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
+const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5 },
+};
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
@@ -45,6 +53,8 @@ export function GlyphDust(props: GlyphDustProps) {
   const {
     keyframes,
     driver = { type: "scroll" },
+    preset = "default",
+    style,
     colors,
     count,
     dpr = DEFAULT_DPR,
@@ -74,15 +84,71 @@ export function GlyphDust(props: GlyphDustProps) {
   const manualRef = useRef(0);
   if (driver.type === "manual") manualRef.current = clamp01(driver.progress);
 
+  // autoplay 用: 再生中フラグと開始時刻（playOnView の場合は画面内で起動）。
+  const autoplay = driver.type === "autoplay" ? driver : null;
+  const playingRef = useRef(false);
+  const startMsRef = useRef<number | null>(null);
+  const lastAutoRef = useRef(0);
+
+  // autoplay: playOnView が false なら即再生、true なら IntersectionObserver で起動。
+  useEffect(() => {
+    if (!autoplay) return;
+    if (autoplay.playOnView === false) {
+      playingRef.current = true;
+      return;
+    }
+    const el = wrapperRef.current;
+    if (el === null || typeof IntersectionObserver === "undefined") {
+      playingRef.current = true; // 観測不可なら無条件再生（真っ白防止）。
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && !playingRef.current) {
+            playingRef.current = true;
+            startMsRef.current = null; // 入った瞬間を開始点に。
+          }
+        }
+      },
+      { threshold: 0.25 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // duration/loop 等の変化では貼り直し不要（毎フレーム参照するため）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay?.playOnView]);
+
   const getProgress = useCallback(() => {
     if (driver.type === "manual") return manualRef.current;
+    if (driver.type === "autoplay") {
+      if (!playingRef.current || typeof performance === "undefined") {
+        return lastAutoRef.current;
+      }
+      if (startMsRef.current === null) startMsRef.current = performance.now();
+      const elapsed = (performance.now() - startMsRef.current) / 1000;
+      lastAutoRef.current = computeAutoplayProgress(elapsed, driver);
+      return lastAutoRef.current;
+    }
     const el = wrapperRef.current;
     if (el === null || typeof window === "undefined") return 0;
     const rect = el.getBoundingClientRect();
     const total = rect.height - window.innerHeight;
     if (total <= 0) return 0;
     return clamp01(-rect.top / total);
-  }, [driver.type]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driver]);
+
+  // プリセット＋上書き: プリセットを土台に、style で指定された項目だけ上書き。
+  const resolvedStyle = useMemo<ResolvedStyle>(() => {
+    const base = PRESETS[preset] ?? PRESETS.default;
+    return {
+      size: style?.size ?? base.size,
+      blend: style?.blend ?? base.blend,
+      drift: style?.drift ?? base.drift,
+      sparkle: style?.sparkle ?? base.sparkle,
+    };
+  }, [preset, style?.size, style?.blend, style?.drift, style?.sparkle]);
 
   const resolvedColors = useMemo<ResolvedColors>(
     () => ({
@@ -135,6 +201,7 @@ export function GlyphDust(props: GlyphDustProps) {
           keyframes={keyframes}
           count={particleCount}
           colors={resolvedColors}
+          style={resolvedStyle}
           cameraZ={cameraZ}
           cameraFov={cameraFov}
           pointer={pointerEnabled}
@@ -168,10 +235,12 @@ export function GlyphDust(props: GlyphDustProps) {
     </>
   );
 
-  // manual: 親要素にフィット。scroll: 背の高いラッパー + sticky 内枠。
-  if (driver.type === "manual") {
+  // manual / autoplay: 親要素にフィット（どんな箱にも置ける）。
+  // scroll のみ背の高いラッパー + sticky 内枠でフルスクリーン演出。
+  if (driver.type === "manual" || driver.type === "autoplay") {
     return (
       <div
+        ref={wrapperRef}
         className={className}
         style={{ position: "relative", width: "100%", height: "100%" }}
       >

@@ -85,7 +85,34 @@ export function Hero() {
 - `domSelector` makes particles land exactly on an existing element's box and font — no jump on cross-fade.
 - `resolveToDom` on the final keyframe hands off from particles to crisp real text.
 
-### Drive it yourself (no scroll)
+### Just drop in text — no scroll choreography
+
+For anything that isn't a full-screen scroll hero, use the **`autoplay`** driver. It
+fits its parent box and plays once when it scrolls into view — drop it anywhere and it
+just animates:
+
+```tsx
+<div style={{ width: 480, height: 220 }}>
+  <GlyphDust
+    driver={{ type: "autoplay", duration: 3.5 }}   // loop / pingpong / delay too
+    preset="minimal"                                 // tasteful out of the box
+    keyframes={[
+      { type: "scatter" },
+      { type: "text", text: "glyphdust", dense: true },
+    ]}
+  />
+</div>
+```
+
+### Pick a look with presets (then tweak)
+
+```tsx
+<GlyphDust preset="glow" style={{ size: 1.2 }} keyframes={[/* … */]} />
+```
+
+`preset` is a tasteful starting point; `style` overrides just the fields you name.
+
+### Drive it yourself (manual)
 
 ```tsx
 const [p, setP] = useState(0); // 0 → 1 from time, GSAP, a slider, anything
@@ -105,7 +132,9 @@ const [p, setP] = useState(0); // 0 → 1 from time, GSAP, a slider, anything
 | prop | type | default | description |
 |---|---|---|---|
 | `keyframes` | `Keyframe[]` | — (required) | The animation timeline. Minimum 1; typically `text → scatter → text`. |
-| `driver` | `DriverConfig` | `{ type: "scroll" }` | Progress source: `scroll` or `manual`. |
+| `driver` | `DriverConfig` | `{ type: "scroll" }` | Progress source: `scroll`, `autoplay`, or `manual`. |
+| `preset` | `GlyphPreset` | `"default"` | Look/motion preset: `default`, `minimal`, `lively`, `glow`. |
+| `style` | `GlyphStyle` | — | Per-field overrides on top of `preset` (see below). |
 | `colors` | `GlyphColors` | see below | Particle ink / accent colors. |
 | `count` | `GlyphCount` | `{ desktop: 11000, mobile: 5200 }` | Particle count per device class. |
 | `timing` | `number[]` | even spacing | Normalized time `0..1` per keyframe (interpolation boundaries). Length must match `keyframes`. |
@@ -142,9 +171,34 @@ type Keyframe = TextKeyframe | ScatterKeyframe;
 ### Drivers
 
 ```ts
-{ type: "scroll", triggerHeight?: number }   // default triggerHeight: 2 (×100vh)
+{ type: "scroll", triggerHeight?: number }   // full-screen sticky hero. default triggerHeight: 2 (×100vh)
 { type: "manual", progress: number }         // you supply 0..1
+{ type: "autoplay",                          // time-based; fits its parent box
+  duration?: number,    // seconds for 0→1 (default 4)
+  delay?: number,       // start delay (default 0)
+  loop?: boolean,       // repeat (default false)
+  pingpong?: boolean,   // 0→1→0 when looping (default false)
+  playOnView?: boolean, // start when scrolled into view (default true)
+}
 ```
+
+`scroll` builds a tall sticky wrapper for a full-screen hero. `manual` and `autoplay`
+simply **fill their parent**, so you can place them in any sized container.
+
+### Presets & style
+
+```ts
+preset: "default" | "minimal" | "lively" | "glow"
+
+style: {
+  size?: number,                  // point-size multiplier (default 1)
+  blend?: "normal" | "additive",  // "additive" = glow, for dark backgrounds
+  drift?: number,                 // idle/scatter wander 0..1 (default 1; 0 = still)
+  sparkle?: number,               // sparkle strength 0..1 (default 1; 0 = off)
+}
+```
+
+`style` always wins over `preset`. Defaults reproduce the original look exactly.
 
 ### Colors
 
@@ -156,7 +210,7 @@ type Keyframe = TextKeyframe | ScatterKeyframe;
 
 ### Low-level helpers
 
-For custom rigs, the building blocks are exported too: `buildTextTargets`, `buildDenseTextTargets`, `buildVertexShader`, `FRAGMENT_SHADER`, `createScrollProgress`, `useScrollProgress`, `useReducedMotion`, `prefersReducedMotion`, `viewSizeAtZ0`, `buildGlyphFromDOM`, `computeScreenRect`.
+For custom rigs, the building blocks are exported too: `buildTextTargets`, `buildDenseTextTargets`, `buildVertexShader`, `FRAGMENT_SHADER`, `createScrollProgress`, `useScrollProgress`, `computeAutoplayProgress`, `useReducedMotion`, `prefersReducedMotion`, `viewSizeAtZ0`, `buildGlyphFromDOM`, `computeScreenRect`.
 
 ---
 
@@ -171,7 +225,7 @@ For custom rigs, the building blocks are exported too: `buildTextTargets`, `buil
 
 ## Status
 
-`0.1.0` — the component and API above are implemented and demoed (see [`examples/`](./examples)). Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
+`0.2.1` — the component and API above are implemented and demoed (see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md). Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
 
 ## License
 

@@ -31,8 +31,55 @@ export interface ManualDriverConfig {
   progress: number;
 }
 
+/**
+ * 自動再生ドライバ設定。スクロール不要で、時間ベースに進捗 0→1 を進める。
+ * 「普通にテキストとして、どんな箱にも置いて勝手に動かす」用途の標準。
+ * 既定では画面内に入った瞬間に再生開始（`playOnView`）。
+ */
+export interface AutoplayDriverConfig {
+  type: "autoplay";
+  /** 0→1 にかける秒数。既定 4。 */
+  duration?: number;
+  /** 再生開始までの遅延秒。既定 0。 */
+  delay?: number;
+  /** ループ再生。既定 false（1 回で 1.0 に張り付く）。 */
+  loop?: boolean;
+  /** ループ時に 0→1→0 を往復する（loop 必須）。既定 false。 */
+  pingpong?: boolean;
+  /** 画面内に入ってから再生開始（IntersectionObserver）。既定 true。 */
+  playOnView?: boolean;
+}
+
 /** ドライバ設定の合併型。 */
-export type DriverConfig = ScrollDriverConfig | ManualDriverConfig;
+export type DriverConfig =
+  | ScrollDriverConfig
+  | ManualDriverConfig
+  | AutoplayDriverConfig;
+
+/** 0→1→0 の三角波（pingpong 用）。 */
+function triangle(x: number): number {
+  const t = x % 2;
+  return t <= 1 ? t : 2 - t;
+}
+
+/**
+ * 自動再生ドライバの進捗を、経過秒から純粋に算出する。
+ * `loop`/`pingpong`/`delay` を解決し 0..1 を返す。SSR セーフ（時計は呼び出し側が渡す）。
+ */
+export function computeAutoplayProgress(
+  elapsedSec: number,
+  cfg: Pick<AutoplayDriverConfig, "duration" | "delay" | "loop" | "pingpong">,
+): number {
+  const duration = cfg.duration && cfg.duration > 0 ? cfg.duration : 4;
+  const delay = cfg.delay && cfg.delay > 0 ? cfg.delay : 0;
+  const t = elapsedSec - delay;
+  if (t <= 0) return 0;
+  const raw = t / duration;
+  if (cfg.loop) {
+    return cfg.pingpong ? triangle(raw) : raw % 1;
+  }
+  return clamp01(raw);
+}
 
 /** 0..1 にクランプ。 */
 function clamp01(x: number): number {

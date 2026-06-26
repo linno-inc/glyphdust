@@ -35,6 +35,14 @@ export interface ResolvedColors {
   accentRatio: number;
 }
 
+/** GlyphPoints が解決済みで受け取る質感（プリセット＋上書き済み）。 */
+export interface ResolvedStyle {
+  size: number;
+  blend: "normal" | "additive";
+  drift: number;
+  sparkle: number;
+}
+
 /**
  * シェーダの uniform 群（型付き）。
  * r3f は `uniforms` prop をクローンしてマテリアルへ適用するため、
@@ -54,6 +62,9 @@ interface GlyphUniforms {
   uPointer: THREE.IUniform<THREE.Vector3>;
   uPointerActive: THREE.IUniform<number>;
   uSize: THREE.IUniform<number>;
+  uSizeScale: THREE.IUniform<number>;
+  uDrift: THREE.IUniform<number>;
+  uSparkle: THREE.IUniform<number>;
   uPixelRatio: THREE.IUniform<number>;
   uColorInk: THREE.IUniform<THREE.Color>;
   uColorAccent: THREE.IUniform<THREE.Color>;
@@ -64,6 +75,7 @@ export interface GlyphPointsProps {
   keyframes: Keyframe[];
   count: number;
   colors: ResolvedColors;
+  style: ResolvedStyle;
   cameraZ: number;
   cameraFov: number;
   pointer: boolean;
@@ -177,6 +189,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     keyframes,
     count,
     colors,
+    style,
     cameraZ,
     cameraFov,
     pointer: pointerEnabled,
@@ -283,6 +296,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uPointer: { value: new THREE.Vector3(0, 0, 0) },
       uPointerActive: { value: 0 },
       uSize: { value: 1 },
+      uSizeScale: { value: style.size },
+      uDrift: { value: style.drift },
+      uSparkle: { value: style.sparkle },
       uPixelRatio: { value: 1 },
       uColorInk: { value: colors.ink.clone() },
       uColorAccent: { value: colors.accent.clone() },
@@ -514,9 +530,25 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const mat = matRef.current;
     if (!mat) return;
     const u = mat.uniforms as unknown as GlyphUniforms;
-    u.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2);
+    u.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 3);
     u.uSize.value = Math.min(size.height / 18, 26);
   }, [size]);
+
+  // 質感（プリセット＋上書き）をマテリアル uniforms / 合成モードへ反映。
+  // uniforms メモは vertexShader にしか依存しないため、style 変化はここで同期する。
+  useEffect(() => {
+    const mat = matRef.current;
+    if (!mat) return;
+    const u = mat.uniforms as unknown as GlyphUniforms;
+    u.uSizeScale.value = style.size;
+    u.uDrift.value = style.drift;
+    u.uSparkle.value = style.sparkle;
+    mat.blending =
+      style.blend === "additive"
+        ? THREE.AdditiveBlending
+        : THREE.NormalBlending;
+    mat.needsUpdate = true;
+  }, [style.size, style.drift, style.sparkle, style.blend]);
 
   useFrame((state, delta) => {
     const p = pointsRef.current;
@@ -526,7 +558,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const d = Math.min(delta, 0.05);
 
     const raw = THREE.MathUtils.clamp(getProgress(), 0, 1);
-    stage.current = THREE.MathUtils.lerp(stage.current, raw, 0.1);
+    // スクロール進捗を直接ステージに反映（lerp 追従は間延びの原因になる）。
+    // 慣性は driver 側（Lenis 等）で付けるのが正しい役割分担。
+    stage.current = raw;
     const s = stage.current;
 
     // --- 補間スカラ（CPU 側で意味論を解決し uniform へ） ---
@@ -546,6 +580,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const lastIsText = timeline.isText[n - 1] === true;
     if (lastIsText && n >= 2) {
       form = smooth(times[n - 2] ?? 0, times[n - 1] ?? 1, s);
+    }
+    // 先頭キーフレームが text のとき: 冒頭は「字形が締まった」状態から始め、
+    // 最初の遷移で解けていく。これがないと「実文字が消えてから粒子が湧く」空白が出る。
+    const firstIsText = timeline.isText[0] === true;
+    if (firstIsText && n >= 2) {
+      const formStart = 1 - smooth(times[0] ?? 0, times[1] ?? 1, s);
+      form = Math.max(form, formStart);
     }
     const guard = THREE.MathUtils.clamp(Math.max(settle, form), 0, 1);
     guardRef.current = guard;
@@ -611,7 +652,11 @@ export function GlyphPoints(props: GlyphPointsProps) {
         uniforms={uniforms}
         transparent
         depthWrite={false}
-        blending={THREE.NormalBlending}
+        blending={
+          style.blend === "additive"
+            ? THREE.AdditiveBlending
+            : THREE.NormalBlending
+        }
         vertexShader={vertexShader}
         fragmentShader={FRAGMENT_SHADER}
       />
