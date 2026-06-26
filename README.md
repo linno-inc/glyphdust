@@ -225,7 +225,7 @@ For custom rigs, the building blocks are exported too: `buildTextTargets`, `buil
 
 ## Status
 
-`0.1.0` — the component and API above are implemented and demoed (see [`examples/`](./examples)). Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
+`0.2.1` — the component and API above are implemented and demoed (see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md). Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
 
 ## License
 
