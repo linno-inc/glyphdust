@@ -105,6 +105,43 @@ export function App() {
           </p>
         </div>
       </section>
+
+      {/* 書体混在デモ: 1 つの字形を区間（segments）に分け、区間ごとに別フォント。
+          粒子は「インク跡」に乗るだけなので、明朝＋ゴシック＋斜体を 1 塊に混ぜられる。 */}
+      <section
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "8vw",
+          textAlign: "center",
+        }}
+      >
+        <div>
+          <div style={{ width: "min(720px, 88vw)", height: 260, margin: "0 auto" }}>
+            <GlyphDust
+              driver={{ type: "autoplay", duration: 3.5, loop: true, pingpong: true }}
+              preset="minimal"
+              keyframes={[
+                { type: "scatter", spread: 0.9 },
+                {
+                  type: "text",
+                  text: "Mix fonts",
+                  segments: [
+                    { text: "Mix ", font: "900 200px Georgia, 'Times New Roman', serif" },
+                    { text: "fonts", font: "300 150px 'Helvetica Neue', Arial, sans-serif" },
+                  ],
+                },
+              ]}
+              colors={{ ink: "#1b2330", accent: "#0055ff", accentRatio: 0.18 }}
+            />
+          </div>
+          <p style={{ marginTop: 16, opacity: 0.65, maxWidth: 640 }}>
+            ↑ <code>segments</code>: one glyph, two typefaces — bold serif
+            “Mix” + light sans “fonts”, stamped into one particle field.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }

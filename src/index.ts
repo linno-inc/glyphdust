@@ -6,7 +6,7 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.2.1";
+export const VERSION = "0.3.0";
 
 // 文字 → 粒子ターゲット生成（Task-002）
 export {
@@ -57,6 +57,7 @@ export { GlyphDust } from "./GlyphDust.js";
 export type {
   Keyframe,
   TextKeyframe,
+  TextSegment,
   ScatterKeyframe,
   GlyphColors,
   GlyphStyle,

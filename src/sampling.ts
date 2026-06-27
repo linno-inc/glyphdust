@@ -12,6 +12,8 @@
  * いずれも SSR セーフ（`document` 不在時は原点クラスタ or 空配列を返し、例外を投げない）。
  */
 
+import type { TextSegment } from "./types.js";
+
 /** alpha がこの値を超えるピクセルを「塗り」とみなす。 */
 const ALPHA_THRESHOLD = 128;
 
@@ -28,6 +30,11 @@ export type Random = () => number;
 export interface TextTargetOptions {
   /** Canvas2D の `font` 文字列（例 `"600 64px 'Noto Sans JP', sans-serif"`）。 */
   font: string;
+  /**
+   * 書体混在の区間列。指定すると `lines` の代わりに各区間を `font` 付きで
+   * インライン描画する（区間内 `\n` で改行）。区間の `font` 省略時は上の `font`。
+   */
+  segments?: TextSegment[] | undefined;
   /** 字形を収める可視ワールド幅。canvas 幅 `cw` 全体がこの幅にマップされる。 */
   worldW: number;
   /** 行送り（px, canvas 座標）。複数行のとき行間に使う。 */
@@ -54,6 +61,8 @@ export interface TextTargetOptions {
 export interface DenseTextTargetOptions {
   /** Canvas2D の `font` 文字列。 */
   font: string;
+  /** 書体混在の区間列（{@link TextTargetOptions.segments} と同じ）。 */
+  segments?: TextSegment[] | undefined;
   /** 字形を収める可視ワールド幅。 */
   worldW: number;
   /** ワールド y オフセット（上が +）。既定 0。 */
@@ -129,6 +138,67 @@ function fillScatterCluster(
   }
 }
 
+/** レイアウト済みのラン（1 区間ぶんの文字＋確定書体）。 */
+interface SegRun {
+  text: string;
+  font: string;
+}
+
+/**
+ * 区間列を「行（ランの並び）」へ展開する。
+ * 各区間の `\n` で改行し、次の区間は新しい行の続きに流れる。
+ * 空文字のランは捨てる（測定・描画に寄与しない）。
+ */
+function segmentsToRunLines(
+  segments: TextSegment[],
+  defaultFont: string,
+): SegRun[][] {
+  const lines: SegRun[][] = [[]];
+  for (const seg of segments) {
+    const font = seg.font ?? defaultFont;
+    const parts = seg.text.split("\n");
+    parts.forEach((part, i) => {
+      if (i > 0) lines.push([]);
+      if (part.length > 0) lines[lines.length - 1]!.push({ text: part, font });
+    });
+  }
+  return lines;
+}
+
+/**
+ * 書体混在の行をオフスクリーン canvas に描画する。
+ * 各行は左→右にランを流し（区間ごとに `ctx.font` を切替え measureText で字送り）、
+ * `align` に応じて行全体を中央寄せ／左寄せする。塗りは黒・baseline middle。
+ */
+function drawSegmentedLines(
+  ctx: CanvasRenderingContext2D,
+  runLines: SegRun[][],
+  cw: number,
+  ch: number,
+  lineHeight: number,
+  align: "center" | "left",
+  leftPad: number,
+): void {
+  ctx.fillStyle = "#000";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  const blockH = lineHeight * (runLines.length - 1);
+  runLines.forEach((runs, i) => {
+    const y = ch / 2 - blockH / 2 + i * lineHeight;
+    let total = 0;
+    for (const r of runs) {
+      ctx.font = r.font;
+      total += ctx.measureText(r.text).width;
+    }
+    let x = align === "left" ? leftPad : cw / 2 - total / 2;
+    for (const r of runs) {
+      ctx.font = r.font;
+      ctx.fillText(r.text, x, y);
+      x += ctx.measureText(r.text).width;
+    }
+  });
+}
+
 /**
  * テキスト行をオフスクリーン canvas に描画し、塗りピクセルをワールド座標ターゲットへ変換する。
  *
@@ -152,19 +222,26 @@ export function buildTextTargets(
   if (!ctx) return out;
 
   const align = opts.align ?? "center";
-  ctx.clearRect(0, 0, cw, ch);
-  ctx.fillStyle = "#000";
-  ctx.textAlign = align === "left" ? "left" : "center";
-  ctx.textBaseline = "middle";
-  ctx.font = opts.font;
-
-  // 左寄せ時は左端に余白を取り、各行を揃える。
-  const drawX = align === "left" ? cw * 0.04 : cw / 2;
   const lh = opts.lineHeight;
-  const blockH = lh * (lines.length - 1);
-  lines.forEach((line, i) => {
-    ctx.fillText(line, drawX, ch / 2 - blockH / 2 + i * lh);
-  });
+  ctx.clearRect(0, 0, cw, ch);
+
+  if (opts.segments && opts.segments.length > 0) {
+    // 書体混在: 区間ごとに font を切替えてインライン描画。
+    const runLines = segmentsToRunLines(opts.segments, opts.font);
+    drawSegmentedLines(ctx, runLines, cw, ch, lh, align, cw * 0.04);
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.textAlign = align === "left" ? "left" : "center";
+    ctx.textBaseline = "middle";
+    ctx.font = opts.font;
+
+    // 左寄せ時は左端に余白を取り、各行を揃える。
+    const drawX = align === "left" ? cw * 0.04 : cw / 2;
+    const blockH = lh * (lines.length - 1);
+    lines.forEach((line, i) => {
+      ctx.fillText(line, drawX, ch / 2 - blockH / 2 + i * lh);
+    });
+  }
 
   const step = opts.step ?? 2;
   const pts = collectFilledPixels(ctx, cw, ch, step);
@@ -222,16 +299,22 @@ export function buildDenseTextTargets(
   if (!ctx) return out;
 
   ctx.clearRect(0, 0, cw, ch);
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = opts.font;
-
   const lh = ch * (opts.lineHeightRatio ?? 0.46);
-  const blockH = lh * (lines.length - 1);
-  lines.forEach((line, i) => {
-    ctx.fillText(line, cw / 2, ch / 2 - blockH / 2 + i * lh);
-  });
+
+  if (opts.segments && opts.segments.length > 0) {
+    const runLines = segmentsToRunLines(opts.segments, opts.font);
+    drawSegmentedLines(ctx, runLines, cw, ch, lh, "center", cw * 0.04);
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = opts.font;
+
+    const blockH = lh * (lines.length - 1);
+    lines.forEach((line, i) => {
+      ctx.fillText(line, cw / 2, ch / 2 - blockH / 2 + i * lh);
+    });
+  }
 
   const step = opts.step ?? 1; // 細かく走査して密に拾う
   const pts = collectFilledPixels(ctx, cw, ch, step);

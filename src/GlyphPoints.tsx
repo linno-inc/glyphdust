@@ -161,6 +161,7 @@ function buildKeyframeTargets(
   if (kf.dense) {
     return buildDenseTextTargets(count, lines, {
       font: kf.font ?? DEFAULT_DENSE_FONT,
+      segments: kf.segments,
       worldW: kf.worldW ?? ctx.visW * (ctx.mobile ? 0.86 : 0.62),
       offsetX: kf.offsetX ?? 0,
       offsetY: kf.offsetY ?? 0,
@@ -173,6 +174,7 @@ function buildKeyframeTargets(
 
   return buildTextTargets(count, lines, {
     font: kf.font ?? DEFAULT_TEXT_FONT,
+    segments: kf.segments,
     worldW: kf.worldW ?? ctx.visW * 0.7,
     lineHeight: 178,
     offsetX: kf.offsetX ?? 0,

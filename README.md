@@ -155,12 +155,34 @@ type Keyframe = TextKeyframe | ScatterKeyframe;
 | field | type | description |
 |---|---|---|
 | `text` | `string` | Text to render. Use `\n` for line breaks. |
+| `segments` | `{ text, font? }[]?` | Mix fonts in one glyph (see below). Particles are stamped from the runs; `text` stays the accessible / `resolveToDom` string. |
 | `domSelector` | `string?` | Selector of a real element; particles align pixel-perfect to its rect & font. |
 | `resolveToDom` | `boolean?` | At the finale, cross-fade particles → real DOM text (usually the last keyframe). |
 | `dense` | `boolean?` | High-density, uniform sampling (best for solid wordmarks). |
-| `font` | `string?` | Canvas2D `font` string. Defaults to a density-appropriate value. |
+| `font` | `string?` | Canvas2D `font` string. Defaults to a density-appropriate value. Also the default for `segments` runs. |
 | `worldW` | `number?` | Visible world width to fit the glyph into. |
 | `offsetX` / `offsetY` | `number?` | World-space offset (right / up are positive). |
+
+#### Mix fonts in one glyph (`segments`)
+
+Particles just ride wherever there's "ink", so a single glyph isn't bound to one
+typeface. Split a keyframe into `segments` and each run gets its own `font`,
+flowing inline (a `\n` inside a run starts a new line; the next run continues there):
+
+```tsx
+{
+  type: "text",
+  text: "Mix fonts",                 // accessible / resolve string
+  segments: [
+    { text: "Mix ",  font: "900 200px Georgia, serif" },        // bold serif
+    { text: "fonts", font: "300 150px 'Helvetica Neue', sans-serif" }, // light sans
+  ],
+}
+```
+
+Runs without a `font` fall back to the keyframe `font`. `segments` is ignored when
+`domSelector` is set (the DOM provides the layout there). Particle **color** is still
+governed globally by `colors` (ink/accent ratio), not per segment.
 
 **`ScatterKeyframe`** (`type: "scatter"`) — scatters particles into a random cloud:
 

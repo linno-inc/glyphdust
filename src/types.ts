@@ -6,6 +6,17 @@ import type { ReactNode } from "react";
 import type { DriverConfig } from "./drivers.js";
 
 /**
+ * 文字塊の一部（ラン）。{@link TextKeyframe.segments} で使う。
+ * 区間ごとに別の `font` を当て、1 つの字形の中で書体を混在させる。
+ */
+export interface TextSegment {
+  /** この区間のテキスト。`\n` で行分割（次の区間は次行へ続く）。 */
+  text: string;
+  /** この区間の Canvas2D `font` 文字列。未指定なら親キーフレームの `font`（さらに無ければ既定）。 */
+  font?: string;
+}
+
+/**
  * テキストキーフレーム。文字を粒子字形にする。
  * 改行は `\n` で明示する（`"次のユーザーは、\n人じゃない。"`）。
  */
@@ -13,7 +24,15 @@ export interface TextKeyframe {
   type: "text";
   /** 描画テキスト。`\n` で行分割。 */
   text: string;
-  /** Canvas2D の `font` 文字列。未指定なら密度に応じた既定。 */
+  /**
+   * 区間ごとに書体を変えて 1 つの字形を組む（書体混在）。
+   * 指定すると粒子のスタンプは `segments` から生成され、各区間はインラインに流れる
+   * （区間内の `\n` で改行）。`text` は引き続きアクセシブルな文言・`resolveToDom` の
+   * 解決先テキストとして使われる（`segments` の連結と一致させるのが望ましい）。
+   * `domSelector` 併用時は無効（DOM 側のレイアウトを使う）。`dense` とは併用しない。
+   */
+  segments?: TextSegment[];
+  /** Canvas2D の `font` 文字列。未指定なら密度に応じた既定。`segments` の既定書体にもなる。 */
   font?: string;
   /** 字形を収める可視ワールド幅。未指定なら可視幅からの既定比率。 */
   worldW?: number;
