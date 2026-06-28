@@ -24,11 +24,13 @@ const DEFAULT_CAMERA_FOV = 42;
 const DEFAULT_DPR: [number, number] = [1, 1.75];
 
 /** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
+const SMOOTH = "smootherstep" as const;
+const FIB = "fibonacci" as const;
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB },
 };
 
 function clamp01(x: number): number {
@@ -147,8 +149,22 @@ export function GlyphDust(props: GlyphDustProps) {
       blend: style?.blend ?? base.blend,
       drift: style?.drift ?? base.drift,
       sparkle: style?.sparkle ?? base.sparkle,
+      stagger: style?.stagger ?? base.stagger,
+      curl: style?.curl ?? base.curl,
+      easing: style?.easing ?? base.easing,
+      scatterPattern: style?.scatterPattern ?? base.scatterPattern,
     };
-  }, [preset, style?.size, style?.blend, style?.drift, style?.sparkle]);
+  }, [
+    preset,
+    style?.size,
+    style?.blend,
+    style?.drift,
+    style?.sparkle,
+    style?.stagger,
+    style?.curl,
+    style?.easing,
+    style?.scatterPattern,
+  ]);
 
   const resolvedColors = useMemo<ResolvedColors>(
     () => ({

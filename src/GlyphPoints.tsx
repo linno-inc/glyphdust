@@ -41,6 +41,10 @@ export interface ResolvedStyle {
   blend: "normal" | "additive";
   drift: number;
   sparkle: number;
+  stagger: number;
+  curl: number;
+  easing: "smoothstep" | "smootherstep";
+  scatterPattern: "random" | "fibonacci";
 }
 
 /**
@@ -64,6 +68,9 @@ interface GlyphUniforms {
   uSize: THREE.IUniform<number>;
   uSizeScale: THREE.IUniform<number>;
   uDrift: THREE.IUniform<number>;
+  uStagger: THREE.IUniform<number>;
+  uCurl: THREE.IUniform<number>;
+  uSmoother: THREE.IUniform<number>;
   uSparkle: THREE.IUniform<number>;
   uPixelRatio: THREE.IUniform<number>;
   uColorInk: THREE.IUniform<THREE.Color>;
@@ -105,9 +112,11 @@ function isMobile(): boolean {
   );
 }
 
+// smootherstep（Perlin 2002, C2 連続）。シェーダ側 smoothRange と式を揃える
+// （settle/form/resolve など CPU 側の補間カーブも加速度を滑らかにする）。
 function smooth(a: number, b: number, x: number): number {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
-  return t * t * (3 - 2 * t);
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 /** 中心 c で 1、左右の neighbor 時刻でほぼ 0 になる山。 */
@@ -117,20 +126,46 @@ function bump(x: number, c: number, prev: number, next: number): number {
   return rise * fall;
 }
 
-/** 飛散雲（ランダム球殻）を生成。 */
+/** 黄金角 ≈ 137.5°（ラジアン）。π(3−√5)。 */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+/**
+ * 飛散雲を生成。
+ *
+ * `pattern="fibonacci"`（既定）: 緯度を等間隔・経度を黄金角で回す「フィボナッチ球」。
+ * ひまわりの種配置（Vogel 1979, phyllotaxis）と同じ最適充填で、どの方向にも均しく・
+ * 有機的に散る。半径だけ軽い乱数揺らぎを残し scatter キーフレーム間で雲が変化する。
+ *
+ * `pattern="random"`: 一様乱数球殻。理論上は一様だが局所的に粒が固まり（クランプ）
+ * 視覚的にムラが出る（比較用の旧方式）。
+ */
 function buildScatter(
   count: number,
   spread: number,
   random: Random,
+  pattern: "random" | "fibonacci" = "fibonacci",
 ): Float32Array {
   const out = new Float32Array(count * 3);
+  if (pattern === "random") {
+    for (let i = 0; i < count; i++) {
+      const r = (3.0 + Math.cbrt(random()) * 2.6) * spread;
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+      out[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      out[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.8;
+      out[i * 3 + 2] = r * Math.cos(phi) * 0.9;
+    }
+    return out;
+  }
   for (let i = 0; i < count; i++) {
-    const r = (3.0 + Math.cbrt(random()) * 2.6) * spread;
-    const theta = random() * Math.PI * 2;
-    const phi = Math.acos(2 * random() - 1);
-    out[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    out[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.8;
-    out[i * 3 + 2] = r * Math.cos(phi) * 0.9;
+    const t = (i + 0.5) / count;
+    const y = 1 - 2 * t; // 緯度: -1..1 を等間隔に
+    const rxy = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = i * GOLDEN_ANGLE; // 経度: 黄金角で回す
+    const r = (3.0 + Math.cbrt(t) * 2.6) * spread * (0.92 + random() * 0.16);
+    out[i * 3] = Math.cos(theta) * rxy * r;
+    out[i * 3 + 1] = y * r * 0.8;
+    out[i * 3 + 2] = Math.sin(theta) * rxy * r * 0.9;
   }
   return out;
 }
@@ -139,10 +174,16 @@ function buildScatter(
 function buildKeyframeTargets(
   kf: Keyframe,
   count: number,
-  ctx: { visW: number; mobile: boolean; cameraFov: number; cameraZ: number },
+  ctx: {
+    visW: number;
+    mobile: boolean;
+    cameraFov: number;
+    cameraZ: number;
+    scatterPattern: "random" | "fibonacci";
+  },
 ): Float32Array {
   if (kf.type === "scatter") {
-    return buildScatter(count, kf.spread ?? 1, Math.random);
+    return buildScatter(count, kf.spread ?? 1, Math.random, ctx.scatterPattern);
   }
 
   const lines = kf.text.split("\n");
@@ -262,6 +303,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
         mobile,
         cameraFov,
         cameraZ,
+        scatterPattern: style.scatterPattern,
       }),
     );
 
@@ -280,7 +322,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
 
     return { geo, buffers, visW, vpW, vpH };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyframes, count, colors.accentRatio, cameraFov, cameraZ]);
+  }, [keyframes, count, colors.accentRatio, cameraFov, cameraZ, style.scatterPattern]);
 
   const vertexShader = useMemo(() => buildVertexShader(Math.max(n, 1)), [n]);
 
@@ -300,6 +342,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uSize: { value: 1 },
       uSizeScale: { value: style.size },
       uDrift: { value: style.drift },
+      uStagger: { value: style.stagger },
+      uCurl: { value: style.curl },
+      uSmoother: { value: style.easing === "smoothstep" ? 0 : 1 },
       uSparkle: { value: style.sparkle },
       uPixelRatio: { value: 1 },
       uColorInk: { value: colors.ink.clone() },
@@ -544,13 +589,17 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const u = mat.uniforms as unknown as GlyphUniforms;
     u.uSizeScale.value = style.size;
     u.uDrift.value = style.drift;
+    u.uStagger.value = style.stagger;
+    // curl noise はモバイルで負荷が高いので軽量パス（0=軸独立 sin/cos）へフォールバック。
+    u.uCurl.value = isMobile() ? 0 : style.curl;
+    u.uSmoother.value = style.easing === "smoothstep" ? 0 : 1;
     u.uSparkle.value = style.sparkle;
     mat.blending =
       style.blend === "additive"
         ? THREE.AdditiveBlending
         : THREE.NormalBlending;
     mat.needsUpdate = true;
-  }, [style.size, style.drift, style.sparkle, style.blend]);
+  }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend]);
 
   useFrame((state, delta) => {
     const p = pointsRef.current;

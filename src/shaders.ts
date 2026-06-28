@@ -65,11 +65,12 @@ export function buildVertexShader(keyframeCount: number): string {
   ).join("\n");
 
   // 隣接キーフレームの mix 連鎖（アンロール）。N==1 のときは補間なし。
+  // 進捗は per-particle stagger 済みの `stageP` を使う（粒子ごとに到達タイミングをずらす）。
   const mixChain = Array.from(
     { length: keyframeCount - 1 },
     (_, k) =>
       `    pos = mix(pos, ${glyphPositionAttribute(k + 1)}, ` +
-      `smoothRange(uTimes[${k}], uTimes[${k + 1}], uStage));`,
+      `smoothRange(uTimes[${k}], uTimes[${k + 1}], stageP));`,
   ).join("\n");
 
   return /* glsl */ `
@@ -87,6 +88,9 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uSize;
   uniform float uSizeScale;
   uniform float uDrift;
+  uniform float uStagger;
+  uniform float uCurl;
+  uniform float uSmoother;
   uniform float uPixelRatio;
 
 ${attributeDecls}
@@ -100,15 +104,98 @@ ${attributeDecls}
   varying float vAlpha;
   varying float vSettle;
 
+  // smoothstep(C1) と Perlin 2002 の smootherstep(C2) を uSmoother で切替（比較用）。
+  // smootherstep は端点で 1 次・2 次微分が 0＝加速度が滑らか（最小躍度・人の手の動き）。
+  // 既定 uSmoother=1（smootherstep）。0 で旧 smoothstep（C1・境界で加速度ジャンプ）。
   float smoothRange(float a, float b, float x) {
     float t = clamp((x - a) / (b - a), 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
+    float s3 = t * t * (3.0 - 2.0 * t);
+    float s5 = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    return mix(s3, s5, uSmoother);
+  }
+
+  // --- Simplex 3D noise（Ashima Arts / Stefan Gustavson, MIT/public domain） ---
+  vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+  vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+  float snoise(vec3 v) {
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+              i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+  }
+  // 3 つの独立ポテンシャル（オフセット seed）から成るベクトル場。
+  vec3 snoiseVec3(vec3 x) {
+    return vec3(
+      snoise(x),
+      snoise(vec3(x.y - 19.1, x.z + 33.4, x.x + 47.2)),
+      snoise(vec3(x.z + 74.2, x.x - 124.5, x.y + 99.4))
+    );
+  }
+  // Curl noise（Bridson 2007）。∇×（ベクトルポテンシャル）で発散ゼロ＝流体的な漂い。
+  // 軸独立 sin/cos と違い「湧き出し/吸い込み」が無く、渦を巻きながら自然に流れる。
+  vec3 curlNoise(vec3 p) {
+    const float e = 0.1;
+    vec3 dx = vec3(e, 0.0, 0.0);
+    vec3 dy = vec3(0.0, e, 0.0);
+    vec3 dz = vec3(0.0, 0.0, e);
+    vec3 px0 = snoiseVec3(p - dx), px1 = snoiseVec3(p + dx);
+    vec3 py0 = snoiseVec3(p - dy), py1 = snoiseVec3(p + dy);
+    vec3 pz0 = snoiseVec3(p - dz), pz1 = snoiseVec3(p + dz);
+    float x = (py1.z - py0.z) - (pz1.y - pz0.y);
+    float y = (pz1.x - pz0.x) - (px1.z - px0.z);
+    float z = (px1.y - px0.y) - (py1.x - py0.x);
+    return vec3(x, y, z) / (2.0 * e);
   }
 
   void main() {
     vSeed = aSeed;
     vAccent = aAccent;
     vForm = uForm;
+
+    // --- per-particle stagger: seed で各粒子の到達タイミングを分散 ---
+    // 早い粒/遅い粒が生まれ「一斉移動」が「群れが集まる」波動感になる。
+    // 終盤（uStage 0.55→0.85）で窓 w を 0 に畳み、全粒子を正確にターゲットへ
+    // 収束させる（DOM 整列・resolve のピクセル一致を壊さないため）。
+    float w = uStagger * (1.0 - smoothRange(0.55, 0.85, uStage));
+    float stageP = clamp((uStage - aSeed * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 
     // --- キーフレーム間の位置補間（隣接ペアの mix 連鎖） ---
     vec3 pos = ${glyphPositionAttribute(0)};
@@ -123,9 +210,20 @@ ${mixChain}
     // アイドルの漂い（整列時 settle / 字形時 form で弱める）。
     vSettle = uSettle;
     float drift = (1.0 - uReduced) * (1.0 - uSettle * 0.9) * (1.0 - uForm) * uDrift;
-    pos.x += sin(uTime * 0.35 + ph) * 0.06 * drift;
-    pos.y += cos(uTime * 0.30 + ph * 1.7) * 0.06 * drift;
-    pos.z += sin(uTime * 0.27 + ph * 2.3) * 0.06 * drift;
+    // uCurl>0 で curl noise の流体的な漂い、0 で軽量な軸独立 sin/cos。
+    // uCurl は uniform なので分岐は draw 全体で一様＝GPU の wave 分岐ペナルティ無し。
+    if (uCurl > 0.001) {
+      // 流れ場は「空間座標」で引く（粒子ごとに位相 ph をずらさない）。
+      // 近傍粒子が同じ方向へ流れて初めて流体的に見える。座標を撹乱すると
+      // 粒子ごとに無相関なランダム変位になり全面ノイズに崩れる。
+      // 振幅は旧 sin/cos ドリフト（±0.06）と同等に抑え、雲を散らさない。
+      vec3 flow = curlNoise(pos * 0.5 + vec3(0.0, 0.0, uTime * 0.06));
+      pos += flow * 0.015 * drift * uCurl;
+    } else {
+      pos.x += sin(uTime * 0.35 + ph) * 0.06 * drift;
+      pos.y += cos(uTime * 0.30 + ph * 1.7) * 0.06 * drift;
+      pos.z += sin(uTime * 0.27 + ph * 2.3) * 0.06 * drift;
+    }
 
     // ワールド空間でポインタ反発（回転後の見た目に合わせ modelMatrix 経由）。
     vec4 world = modelMatrix * vec4(pos, 1.0);

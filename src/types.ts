@@ -107,6 +107,28 @@ export interface GlyphStyle {
   drift?: number;
   /** きらめく粒の強さ 0..1。既定 1。0 で無効（ミニマル）。 */
   sparkle?: number;
+  /**
+   * 粒子ごとの到達タイミング分散（stagger）の強さ 0..~0.4。既定はプリセット依存。
+   * seed で各粒子の morph 開始を遅らせ「一斉移動」を「群れが集まる」波動感にする。
+   * 終盤（字形形成〜保持）では自動で 0 に畳まれ、整列・resolve のピクセル一致は保たれる。
+   */
+  stagger?: number;
+  /**
+   * アイドル漂いに curl noise（発散ゼロの流れ場）を使う強さ 0..~1.5。既定はプリセット依存。
+   * 0 で軸独立 sin/cos の軽量漂い、>0 で流体的な渦の漂い。
+   * モバイルでは負荷軽減のため内部で自動的に軽量パス（0）へフォールバックする。
+   */
+  curl?: number;
+  /**
+   * 位置補間の easing。既定 `"smootherstep"`（C2・加速度が滑らか, Perlin 2002）。
+   * `"smoothstep"` で旧来の C1（境界で加速度ジャンプ）。比較・検証用の切替。
+   */
+  easing?: "smoothstep" | "smootherstep";
+  /**
+   * 飛散雲の点分布。既定 `"fibonacci"`（黄金角・均等で有機的, Vogel 1979）。
+   * `"random"` で一様乱数球殻（局所的にクランプ＝ムラが出る）。比較・検証用の切替。
+   */
+  scatterPattern?: "random" | "fibonacci";
 }
 
 /**
