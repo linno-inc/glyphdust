@@ -4,6 +4,23 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-06-30
+
+Non-breaking feature release. Existing npm/bundler usage is unchanged.
+
+### Added
+
+- **CDN (`<script>`) build — zero install.** A standalone IIFE bundle
+  (`dist/glyphdust.min.js`, ~140&nbsp;KB gzipped) with **three.js bundled in**,
+  exposing a global `glyphdust` with `glyphText()` and `VERSION`. Drop
+  `https://cdn.jsdelivr.net/npm/glyphdust` (or unpkg) into any HTML file — no
+  `npm install`, no bundler — and call `glyphdust.glyphText("#hero", "LINNO")`.
+  Wired via the `unpkg` / `jsdelivr` package fields and a `./cdn` export.
+  _Why: let an AI agent (or anyone) use glyphdust on the spot, by pasting a snippet
+  that runs with no toolchain (提案者: 凜さん 2026-06-30)._ The React-dependent API is
+  intentionally excluded from this bundle (a dedicated `src/cdn.ts` entry re-exports
+  only the vanilla `glyphText`), so React is never pulled into the script.
+
 ## [0.5.0] — 2026-06-30
 
 Non-breaking feature release. The existing `<GlyphDust>` component is unchanged.
