@@ -35,6 +35,8 @@ glyphText("#hero", "LINNO");          // particles fly in, settle into the word,
 It returns a handle (`destroy()` / `pause()` / `play()` / `restart()`), needs no React,
 and is preset-driven so it looks right with zero config. See [`glyphText()`](#glyphtext-vanilla-one-call) below.
 
+Want **zero install** — just a `<script>` tag in plain HTML? See [Use from a CDN](#use-from-a-cdn-zero-install).
+
 ---
 
 ## Why glyphdust?
@@ -65,6 +67,30 @@ npm i glyphdust three @react-three/fiber
 
 > Using only the **`glyphText()`** one-call API (no React)? You just need `three`:
 > `npm i glyphdust three`.
+
+---
+
+## Use from a CDN (zero install)
+
+No build step, no `npm install`, no bundler. Drop two `<script>` tags into any HTML
+file and call `glyphText()`. **three.js is bundled in** — nothing else to load.
+
+```html
+<div id="hero" style="width:100vw;height:100vh"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/glyphdust"></script>
+<script>
+  glyphdust.glyphText("#hero", "LINNO");   // particles fly in, settle into the word, hold
+</script>
+```
+
+- The script exposes a global **`glyphdust`** with `glyphText()` and `VERSION`.
+- Same API and options as the npm `glyphText()` below — e.g.
+  `glyphdust.glyphText("#hero", "Hello", { preset: "glow", loop: true })`.
+- Pin a version for production: `https://cdn.jsdelivr.net/npm/glyphdust@0.6.0`
+  (or unpkg: `https://unpkg.com/glyphdust`).
+- The bundle is ~140&nbsp;KB gzipped (three.js included). For React apps or
+  tree-shaking, prefer the `npm i` route above instead.
 
 ---
 

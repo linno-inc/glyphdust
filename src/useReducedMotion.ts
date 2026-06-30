@@ -1,21 +1,19 @@
 /**
- * useReducedMotion.ts — `prefers-reduced-motion: reduce` の購読。
+ * useReducedMotion.ts — `prefers-reduced-motion: reduce` の購読（React フック）。
  *
  * 演出を無効化（静的フォールバック表示）すべきかの判定に使う。
  * SSR では false から始め、マウント後にメディアクエリへ同期する（ハイドレーション不一致回避）。
+ *
+ * 同期的な imperative 判定 {@link prefersReducedMotion} は React 非依存の
+ * `./prefers-reduced-motion.js` に分離してある（CDN ビルドへの React 混入回避）。
+ * 後方互換のためここからも re-export する。
  */
 
 import { useEffect, useState } from "react";
 
-const QUERY = "(prefers-reduced-motion: reduce)";
+import { REDUCED_MOTION_QUERY } from "./prefers-reduced-motion.js";
 
-/** 現在 reduced-motion かを同期的に返す（イベント購読なし。imperative 用）。 */
-export function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
-  }
-  return window.matchMedia(QUERY).matches;
-}
+export { prefersReducedMotion } from "./prefers-reduced-motion.js";
 
 /**
  * `prefers-reduced-motion: reduce` を購読する React フック。
@@ -31,7 +29,7 @@ export function useReducedMotion(): boolean {
     ) {
       return;
     }
-    const mq = window.matchMedia(QUERY);
+    const mq = window.matchMedia(REDUCED_MOTION_QUERY);
     setReduced(mq.matches);
     const onChange = () => setReduced(mq.matches);
     mq.addEventListener("change", onChange);
