@@ -379,6 +379,14 @@ export function glyphText(
       form = Math.max(form, 1 - smooth(times[0] ?? 0, times[1] ?? 1, s));
     }
 
+    // 終端保持の収束: 最後が text のとき、保持区間（times[n-1]→1.0）で settle を
+    // 1 に張り付かせ、粒子の字形を「くっきり密」に定着させる。settle は
+    // bump(c=times[n-1], …, next=1) 由来で s=1.0 に向け 0 へ戻るため、これが無いと
+    // 保持中にエッジ締め・不透明度・サイズ均一化（uSettle 依存）が抜けて逆に緩んで
+    // 見える。form は最終遷移で 1 に達し 1.0 まで保持するのでそれを下限に使う
+    // （resolve しない vanilla は粒子の字形がそのまま最終絵。提案者: 凜さん 2026-07-01 指摘）。
+    if (lastIsText) settle = Math.max(settle, form);
+
     u.uTime!.value = elapsedSeconds();
     u.uStage!.value = s;
     u.uForm!.value = form;

@@ -4,6 +4,17 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-07-01
+
+### Fixed
+
+- **`glyphText()` の終端が「くっきり収束」しきらず緩い粒子のまま保持されていた問題を修正。**
+  保持区間（最終 text キーフレーム 0.85→1.0）で整列ホールド度合い `uSettle`
+  （エッジ締め・不透明度・点サイズ均一化を駆動）が `bump` 由来で 0 へ戻ってしまい、
+  止まった後にむしろ緩んで見えていた。最終キーフレームが text のとき `uSettle` を
+  `uForm` で下限留めし、保持中 1 に張り付かせて密に定着させる。`<GlyphDust>`（R3F・
+  resolveToDom で実文字へ受け渡す経路）は対象外で挙動不変。_提案者: 凜さん 2026-07-01。_
+
 ## [0.6.0] — 2026-06-30
 
 Non-breaking feature release. Existing npm/bundler usage is unchanged.
