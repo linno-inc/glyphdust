@@ -6,10 +6,10 @@
  *
  * 進捗ゲッターは「毎フレーム呼ばれる純粋な関数」として表現する（useFrame から polling）。
  * SSR セーフ（`window` 不在時は 0 を返す）。
+ *
+ * このファイルは React 非依存に保つ（CDN ビルドへの React 混入回避）。React フック
+ * {@link import("./use-scroll-progress.js").useScrollProgress} は別ファイルへ分離してある。
  */
-
-import { useCallback } from "react";
-import type { RefObject } from "react";
 
 /** sticky トリガー領域の既定高さ（×100vh）。 */
 export const DEFAULT_TRIGGER_HEIGHT = 2;
@@ -101,21 +101,4 @@ export function createScrollProgress(
     if (total <= 0) return 0;
     return clamp01(-rect.top / total);
   };
-}
-
-/**
- * sticky トリガー要素の ref からスクロール進捗ゲッターを返す React フック。
- * 返り値は ref を遅延参照する安定した関数（useFrame からそのまま polling できる）。
- */
-export function useScrollProgress(
-  ref: RefObject<HTMLElement | null>,
-): () => number {
-  return useCallback(() => {
-    const el = ref.current;
-    if (el === null || typeof window === "undefined") return 0;
-    const rect = el.getBoundingClientRect();
-    const total = rect.height - window.innerHeight;
-    if (total <= 0) return 0;
-    return clamp01(-rect.top / total);
-  }, [ref]);
 }

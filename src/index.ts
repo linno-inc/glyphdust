@@ -35,10 +35,9 @@ export {
   type GlyphScreenRect,
 } from "./dom-overlay.js";
 
-// 進捗ドライバ
+// 進捗ドライバ（React 非依存）
 export {
   createScrollProgress,
-  useScrollProgress,
   computeAutoplayProgress,
   DEFAULT_TRIGGER_HEIGHT,
   type DriverConfig,
@@ -47,8 +46,12 @@ export {
   type AutoplayDriverConfig,
 } from "./drivers.js";
 
-// reduced-motion（Task-005）
-export { useReducedMotion, prefersReducedMotion } from "./useReducedMotion.js";
+// スクロール進捗 React フック（React 依存は別ファイルに隔離）
+export { useScrollProgress } from "./use-scroll-progress.js";
+
+// reduced-motion（Task-005）。imperative 判定は React 非依存ファイルに分離。
+export { prefersReducedMotion } from "./prefers-reduced-motion.js";
+export { useReducedMotion } from "./useReducedMotion.js";
 
 // 公開コンポーネント（Task-006）
 export { GlyphDust } from "./GlyphDust.js";

@@ -19,12 +19,16 @@ export default defineConfig([
     entry: { glyphdust: "src/cdn.ts" },
     format: ["iife"],
     globalName: "glyphdust",
+    platform: "browser",
     dts: false,
     sourcemap: true,
     clean: false, // 上の ESM/CJS ビルド成果物を消さない
     treeshake: true,
     minify: true,
-    // three は同梱（external にしない）。react 系は使わないが、念のため除外して混入を防ぐ。
+    // ブラウザに `process` は無い。three / React 残骸の process.env.NODE_ENV 参照で
+    // 評価時クラッシュ（global が定義されない）を防ぐため定数に畳む。
+    define: { "process.env.NODE_ENV": '"production"' },
+    // three は同梱（external にしない）。React 系は vanilla 経路では未使用なので除外。
     external: ["react", "react-dom", "@react-three/fiber"],
     outExtension: () => ({ js: ".min.js" }),
   },

@@ -30,7 +30,7 @@ import {
   glyphPositionAttribute,
 } from "./shaders.js";
 import { computeAutoplayProgress } from "./drivers.js";
-import { prefersReducedMotion } from "./useReducedMotion.js";
+import { prefersReducedMotion } from "./prefers-reduced-motion.js";
 import type { GlyphColors, GlyphPreset, GlyphStyle, Keyframe } from "./types.js";
 
 /** {@link glyphText} のオプション。すべて任意。 */
