@@ -6,7 +6,7 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 // 文字 → 粒子ターゲット生成（Task-002）
 export {
@@ -52,6 +52,13 @@ export { useReducedMotion, prefersReducedMotion } from "./useReducedMotion.js";
 
 // 公開コンポーネント（Task-006）
 export { GlyphDust } from "./GlyphDust.js";
+
+// 最小ワンコール API（React 不要・vanilla）
+export {
+  glyphText,
+  type GlyphTextOptions,
+  type GlyphTextHandle,
+} from "./vanilla.js";
 
 // 公開型（Task-006 / 007）
 export type {

@@ -20,6 +20,21 @@ Pass any text and glyphdust dissolves it into thousands of GPU particles, scatte
 
 That's the whole thing. Scroll, and it animates.
 
+### No React? One call.
+
+Don't want to set up react-three-fiber and a `<Canvas>`? Reach for **`glyphText()`** —
+a framework-free function that boots three.js for you, fills any box, and autoplays.
+One import, one call:
+
+```js
+import { glyphText } from "glyphdust";
+
+glyphText("#hero", "LINNO");          // particles fly in, settle into the word, hold
+```
+
+It returns a handle (`destroy()` / `pause()` / `play()` / `restart()`), needs no React,
+and is preset-driven so it looks right with zero config. See [`glyphText()`](#glyphtext-vanilla-one-call) below.
+
 ---
 
 ## Why glyphdust?
@@ -47,6 +62,9 @@ npm i glyphdust three @react-three/fiber
 ```
 
 `three`, `@react-three/fiber`, `react`, and `react-dom` are **peer dependencies** (React 18+, three 0.160+).
+
+> Using only the **`glyphText()`** one-call API (no React)? You just need `three`:
+> `npm i glyphdust three`.
 
 ---
 
@@ -126,6 +144,53 @@ const [p, setP] = useState(0); // 0 → 1 from time, GSAP, a slider, anything
 ---
 
 ## API
+
+### `glyphText()` (vanilla, one call)
+
+A React-free entry point. It creates the `<canvas>`, boots three.js, fits the target
+element, and autoplays — so an agent (or you) can drop a single line and get particles.
+
+```ts
+glyphText(target, text, options?) => GlyphTextHandle
+```
+
+```js
+import { glyphText } from "glyphdust";
+
+const handle = glyphText("#hero", "LINNO", { preset: "glow", loop: true, pingpong: true });
+// later:
+handle.pause();      // freeze
+handle.play();       // resume
+handle.restart();    // replay from the start
+handle.destroy();    // remove the canvas, free GPU resources, disconnect observers
+```
+
+- **`target`** — a CSS selector or an `HTMLElement`. The canvas fills it (so give the box a size).
+- **`text`** — the word/phrase. `\n` for line breaks.
+- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), destroy() }`.
+
+By default it scatters particles, then forms the text and holds (the last text keyframe
+settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
+
+| option | type | default | description |
+|---|---|---|---|
+| `preset` | `GlyphPreset` | `"default"` | `default` / `minimal` / `lively` / `glow`. |
+| `style` | `GlyphStyle` | — | Per-field overrides on top of `preset`. |
+| `colors` | `GlyphColors` | ink `#1b2330` / accent `#0055ff` | Particle colors. |
+| `count` | `number` | `11000` (mobile `5200`) | Particle count. |
+| `spread` | `number` | `1.3` | Scatter radius for the auto keyframes. |
+| `duration` | `number` | `3.6` | Seconds for `0→1`. |
+| `delay` | `number` | `0` | Start delay (seconds). |
+| `loop` | `boolean` | `false` | Repeat. |
+| `pingpong` | `boolean` | `false` | `0→1→0` when looping. |
+| `playOnView` | `boolean` | `true` | Start when scrolled into view; pauses off-screen. |
+| `maxDpr` | `number` | `1.75` | `devicePixelRatio` cap. |
+| `cameraZ` / `cameraFov` | `number` | `7` / `42` | Camera position / vertical FOV. |
+| `keyframes` | `Keyframe[]` | scatter → text | Override the auto sequence entirely. |
+| `fallback` | `boolean` | `true` | On reduced-motion / no-WebGL, draw static text instead of a blank box. |
+
+Reduced-motion and no-WebGL are handled for you: with `fallback` on (the default) the
+target shows plain centered text instead of a blank box.
 
 ### `<GlyphDust>` props
 
@@ -247,7 +312,9 @@ For custom rigs, the building blocks are exported too: `buildTextTargets`, `buil
 
 ## Status
 
-`0.2.1` — the component and API above are implemented and demoed (see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md). Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
+`0.5.0` — the component, the `glyphText()` one-call API, and everything above are
+implemented and demoed (see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md).
+Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
 
 ## License
 

@@ -4,6 +4,41 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-06-30
+
+Non-breaking feature release. The existing `<GlyphDust>` component is unchanged.
+
+### Added
+
+- **`glyphText(target, text, options?)` — a React-free one-call API.** Drop a single
+  line and get particles: it creates the `<canvas>`, boots three.js, fits the target
+  element, and autoplays (scatter → text, then holds). Returns a handle
+  (`destroy()` / `pause()` / `play()` / `restart()`). Preset-driven, so it looks right
+  with zero config; `prefers-reduced-motion` / no-WebGL fall back to static centered
+  text. Needs only `three` (no React / react-three-fiber). Exported types
+  `GlyphTextOptions`, `GlyphTextHandle`.
+  _Why: let an AI agent (or anyone) use glyphdust lightly and on the spot, without
+  R3F setup. (提案者: 凜さん 2026-06-30)_
+
+### Changed
+
+- Internal: the framework-agnostic particle geometry/interpolation helpers
+  (`buildScatter`, `buildKeyframeTargets`, `smooth`, `bump`) moved to
+  `src/internal/geometry.ts` and are now shared by both the R3F component and
+  `glyphText()`. Byte-identical extraction — the component's behavior is unchanged.
+
+## [0.4.0] — 2026-06-28
+
+Non-breaking feature release. Defaults reproduce 0.3.0 exactly.
+
+### Added
+
+- **Motion math controls in `style`** — `stagger` (per-particle arrival spread),
+  `curl` (curl-noise idle drift), `easing` (`"smoothstep"` C1 vs `"smootherstep"` C2,
+  Perlin 2002), and `scatterPattern` (`"random"` vs `"fibonacci"` golden-angle cloud,
+  Vogel 1979). Backed by new shader uniforms; the example gains a before/after toggle.
+  Defaults preserve the prior look. _(提案者: 凜さん)_
+
 ## [0.3.0] — 2026-06-28
 
 Non-breaking feature release. Defaults reproduce 0.2.1 exactly.

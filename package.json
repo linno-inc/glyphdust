@@ -1,7 +1,7 @@
 {
   "name": "glyphdust",
-  "version": "0.4.0",
-  "description": "Scroll-driven text → particles → glyph → real-text resolve, in one declarative React Three Fiber component.",
+  "version": "0.5.0",
+  "description": "Text → particles → glyph → real-text resolve. One React-three-fiber component, or one React-free call: glyphText(\"#hero\", \"LINNO\").",
   "type": "module",
   "license": "MIT",
   "author": "LINNO (NOGUCHILin)",
