@@ -4,6 +4,39 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-07-01
+
+AIエージェント第一（agent-native）方針のもとで `glyphText()` を強化する非破壊リリース
+（提案者: 凜さん 2026-07-01。glyphdust のメインターゲット = AIエージェント）。
+
+### Added
+
+- **`glyphText` を外部/実時間ドライブ可能に。** オプション `autoplay: false` と操作ハンドルの
+  `setProgress(0..1)` を追加。スクロール量・時間・センサー・**AIエージェント**など任意の
+  ソースから進捗を毎フレーム流し込める（従来は時間ベース autoplay のみ）。
+- **`resolveToDom: true`（本来の看板挙動を vanilla にも）。** 収束点で粒子をフェードアウトし、
+  最後の text キーフレームに紐づく実 DOM 要素（`domSelector`）を crisp な本物のテキストとして
+  出す。先頭 text も実文字→粒子へクロスフェードで受け渡す。粒子はサンプリング元と同位置の
+  ためクロスフェード中に文字がずれない。
+
+### Fixed
+
+- **`resolveToDom` の整列 footgun を除去。** `buildGlyphFromDOM` が要素ボックス左上を原点に
+  テキストを描いていたため、`display:flex` 中央寄せや padding 付きの大きな箱では粒子だけ
+  大きくずれた。実際に描画されたテキストの矩形（`Range.getBoundingClientRect`）基準に変更し、
+  中央寄せ・padding の要素でもピクセル一致する。AIエージェントが要素の作り方を選べない前提で
+  ライブラリ側が吸収する。
+- **スクロールバー由来の横ズレを補正。** `domSelector` サンプリングが `window.innerWidth`
+  基準だったのを、canvas 実寸（`viewportW`/`viewportH`、`KeyframeBuildContext` 経由で vanilla が
+  供給）基準に変更。縦スクロールバーがあっても粒子字形が実 DOM 文字から横にずれない。
+- **収束/拡散のクロスフェードを滑らかに。** 冒頭の実文字→粒子は瞬時 swap をやめ短い窓で
+  クロスフェード、終端の粒子→実文字は窓を広げて硬い切替を解消。
+
+### Changed
+
+- 点サイズ上限に `uSizeScale`（`style.size`）を反映（既定 1 で挙動不変）。`style.size > 1` で
+  収束時に「隙間なく塗られた solid なテキスト」を作れるように。
+
 ## [0.6.1] — 2026-07-01
 
 ### Fixed

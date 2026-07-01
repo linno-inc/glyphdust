@@ -93,6 +93,13 @@ export interface KeyframeBuildContext {
   cameraFov: number;
   cameraZ: number;
   scatterPattern: "random" | "fibonacci";
+  /**
+   * canvas の実表示サイズ（CSS px）。domSelector サンプリングの画面→ワールド変換に使う。
+   * 省略時は window.innerWidth/Height だが、縦スクロールバーがあると innerWidth と canvas
+   * 幅が数 px ずれ、粒子字形が実 DOM 文字から横にずれる。整列には canvas 実寸を渡す。
+   */
+  viewportW?: number;
+  viewportH?: number;
 }
 
 /** 1 つのキーフレームの位置ターゲットを生成。 */
@@ -113,6 +120,9 @@ export function buildKeyframeTargets(
       selector: kf.domSelector,
       fovDeg: ctx.cameraFov,
       cameraZ: ctx.cameraZ,
+      // 実寸が分かる場合のみ渡す（exactOptionalPropertyTypes: undefined を明示しない）。
+      ...(ctx.viewportW !== undefined ? { viewportW: ctx.viewportW } : {}),
+      ...(ctx.viewportH !== undefined ? { viewportH: ctx.viewportH } : {}),
     });
     if (dom) return dom;
     // 取れなければ通常サンプリングへフォールバック。

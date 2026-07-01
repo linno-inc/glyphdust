@@ -252,7 +252,10 @@ ${mixChain}
     // （コーポレートサイト実装で実証。0.62 と clamp 4〜5 が最も「霞まない」）。
     float s = uSize * sizeVar * 0.62 * uSizeScale;
     gl_PointSize = s * uPixelRatio * (1.0 / -mvPosition.z);
-    gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.0, uForm) * uPixelRatio);
+    // 点サイズ上限。既定は 4〜5px（高精細・霞まない実証値）。uSizeScale(style.size) を
+    // 掛けることで、収束時に「隙間なく塗られた solid なテキスト」を作りたいときは
+    // style.size>1 で上限も引き上げられる（既定 uSizeScale=1 で挙動不変）。
+    gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.0, uForm) * uPixelRatio * max(uSizeScale, 1.0));
   }
 `;
 }

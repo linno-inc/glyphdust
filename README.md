@@ -193,7 +193,7 @@ handle.destroy();    // remove the canvas, free GPU resources, disconnect observ
 
 - **`target`** — a CSS selector or an `HTMLElement`. The canvas fills it (so give the box a size).
 - **`text`** — the word/phrase. `\n` for line breaks.
-- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), destroy() }`.
+- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), destroy() }`.
 
 By default it scatters particles, then forms the text and holds (the last text keyframe
 settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
@@ -210,10 +210,38 @@ settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
 | `loop` | `boolean` | `false` | Repeat. |
 | `pingpong` | `boolean` | `false` | `0→1→0` when looping. |
 | `playOnView` | `boolean` | `true` | Start when scrolled into view; pauses off-screen. |
+| `autoplay` | `boolean` | `true` | `false` → don't advance by time; drive progress yourself via `handle.setProgress(0..1)` (scroll, GSAP, an AI agent, any signal). |
+| `resolveToDom` | `boolean` | `false` | Resolve particles into **real DOM text** at the ends: fade particles out and reveal the actual element behind the last (and first) `domSelector` text keyframe — crisp, selectable, accessible. |
 | `maxDpr` | `number` | `1.75` | `devicePixelRatio` cap. |
 | `cameraZ` / `cameraFov` | `number` | `7` / `42` | Camera position / vertical FOV. |
 | `keyframes` | `Keyframe[]` | scatter → text | Override the auto sequence entirely. |
 | `fallback` | `boolean` | `true` | On reduced-motion / no-WebGL, draw static text instead of a blank box. |
+
+#### Drive it yourself — scroll, an agent, anything (`autoplay: false` + `setProgress`)
+
+```js
+// Two real headlines in the DOM (#a "LINNO", #b "創造"), each tightly wrapping its text.
+const h = glyphText("#hero", "LINNO / 創造", {
+  autoplay: false,       // progress comes from you, not a clock
+  resolveToDom: true,    // ends resolve into the real DOM text (crisp & selectable)
+  keyframes: [
+    { type: "text",    text: "LINNO", domSelector: "#a" }, // particles sampled from the real element → pixel-aligned
+    { type: "scatter", spread: 0.4 },
+    { type: "text",    text: "創造",  domSelector: "#b" },
+  ],
+});
+
+// scroll-driven:
+addEventListener("scroll", () => {
+  const p = scrollY / (document.body.scrollHeight - innerHeight);
+  h.setProgress(p);      // 0 → LINNO, 0.5 → particle cloud, 1 → 創造
+});
+// …or an agent / timeline / audio can call h.setProgress(x) every frame just the same.
+```
+
+With `resolveToDom`, glyphdust reads where each `domSelector` element's text is **actually
+painted** (so `display:flex`-centered or padded boxes align correctly) and cross-fades the
+particles into that real text.
 
 Reduced-motion and no-WebGL are handled for you: with `fallback` on (the default) the
 target shows plain centered text instead of a blank box.

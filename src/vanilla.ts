@@ -71,6 +71,24 @@ export interface GlyphTextOptions {
    * false にすると何も描かない（真っ白）。
    */
   fallback?: boolean;
+  /**
+   * 自動再生するか。既定 `true`（時間で 0→1 を進める）。
+   * `false` にすると時間では進めず、進捗は {@link GlyphTextHandle.setProgress} で外部から
+   * 与える（スクロール連動・GSAP・任意のドライバ用）。スクロールに繋ぐには毎フレーム/毎
+   * スクロールで `setProgress(scrollY / scrollable)` を呼ぶ（提案者: 凜さん 2026-07-01）。
+   */
+  autoplay?: boolean;
+  /**
+   * 収束点で粒子を実 DOM テキストへ受け渡すか。既定 `false`（粒子字形を保持）。
+   * `true` にすると glyphdust 本来の看板挙動になる: 終端で粒子をフェードアウトし、
+   * 最後の text キーフレームに紐づく実 DOM 要素（`domSelector` 指定）を crisp な本物の
+   * テキストとして出す。先頭 text も `domSelector` があれば冒頭に実文字を出し、swap 点で
+   * 粒子へ即切替える。**ピクセル一致には各 text キーフレームに `domSelector` が必要**
+   * （実要素の矩形・フォントから粒子を生成し、同位置に実文字を重ねる）。指定が無い
+   * キーフレームは従来どおり粒子字形のまま（提案者: 凜さん 2026-07-01。「元々の仕様＝実
+   * テキストに解決」を vanilla にも積む）。
+   */
+  resolveToDom?: boolean;
 }
 
 /** {@link glyphText} が返す操作ハンドル。 */
@@ -83,6 +101,12 @@ export interface GlyphTextHandle {
   pause(): void;
   /** 再開。 */
   play(): void;
+  /**
+   * 進捗 0..1 を外部から与える（`autoplay:false` 用）。スクロール量や任意のドライバを
+   * そのまま渡せる。範囲外は 0..1 にクランプ。autoplay 中でも呼べるが、次の自動更新で
+   * 上書きされる。
+   */
+  setProgress(progress: number): void;
   /** すべて破棄（canvas 除去・three リソース解放・監視解除）。冪等。 */
   destroy(): void;
 }
@@ -156,6 +180,7 @@ function inertHandle(canvas: HTMLCanvasElement | null = null): GlyphTextHandle {
     restart() {},
     pause() {},
     play() {},
+    setProgress() {},
     destroy() {
       if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
     },
@@ -273,6 +298,11 @@ export function glyphText(
       cameraFov,
       cameraZ,
       scatterPattern: style.scatterPattern,
+      // canvas 実寸（=対象要素の実寸）を渡し、スクロールバー分の横ズレを消す。
+      // これが無いと domSelector サンプリングが window.innerWidth 基準になり、粒子字形が
+      // 実 DOM 文字から数 px 横へずれる（凜さん 2026-07-01「ちょっとずれてる」）。
+      viewportW: w,
+      viewportH: h,
     }),
   );
   buffers.forEach((buf, i) => {
@@ -294,7 +324,26 @@ export function glyphText(
   const isText = keyframes.map((k) => k.type === "text");
   const isScatter = keyframes.map((k) => k.type === "scatter");
   const firstIsText = isText[0] === true;
-  const swapAt = times[1] !== undefined ? times[1] * 0.15 : 0;
+
+  // 実 DOM テキストへの受け渡し（看板機能）。resolveToDom=true のときだけ有効。
+  // 先頭/末尾の text キーフレームに紐づく実要素をフェード制御する（粒子はサンプリング元と
+  // 同位置なのでクロスフェードで文字が動かない）。
+  const resolveMode = options.resolveToDom === true;
+  const firstKf = keyframes[0];
+  const firstSel =
+    firstKf?.type === "text" ? firstKf.domSelector : undefined;
+  const firstResolveEl =
+    resolveMode && firstIsText && firstSel ? resolveTarget(firstSel) : null;
+  const lastKf = keyframes[n - 1];
+  const lastSel = lastKf?.type === "text" ? lastKf.domSelector : undefined;
+  const lastResolveEl =
+    resolveMode && lastSel ? resolveTarget(lastSel) : null;
+  // 冒頭の実文字→粒子クロスフェード窓（0→swapWindow で溶け合わせる）。resolveMode 時のみ。
+  // 瞬時 swap ではなく短い窓にして「拡散の出だし」を滑らかにする（凜さん 2026-07-01）。
+  const swapWindow =
+    times[1] !== undefined ? Math.max(times[1] * 0.35, 0.1) : 0.1;
+  // 非 resolve 時は進捗 0 から粒子を可視にする（uSwap=1 固定）。ゲートを残すと先頭が
+  // 空白になり、特にスクロール駆動で「最初が真っ白」になるため（凜さん 2026-07-01）。
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
@@ -351,13 +400,16 @@ export function glyphText(
     typeof performance !== "undefined" ? (performance.now() - epochMs) / 1000 : 0;
   let rafId = 0;
   let running = false;
-  let playing = options.playOnView === false; // playOnView=false なら即再生
+  // autoplay=false は手動（スクロール等）駆動。時間では進めず setProgress に従う。
+  const manual = options.autoplay === false;
+  let playing = manual || options.playOnView === false; // 手動 or playOnView=false なら即「再生中」
   let startMs: number | null = null;
   let lastProgress = 0;
   let disposed = false;
 
   const renderFrame = () => {
-    const raw = playing ? progressNow() : lastProgress;
+    // 手動モードは時間で進めず、外部が与えた lastProgress をそのまま使う。
+    const raw = manual ? lastProgress : playing ? progressNow() : lastProgress;
     const s = raw < 0 ? 0 : raw > 1 ? 1 : raw;
 
     let settle = 0;
@@ -392,8 +444,22 @@ export function glyphText(
     u.uForm!.value = form;
     u.uSettle!.value = settle;
     u.uBurst!.value = burst * (1 - form);
-    u.uSwap!.value = raw >= swapAt ? 1 : 0;
-    u.uResolve!.value = 0;
+    if (resolveMode) {
+      // 拡散（冒頭）: 実文字→粒子を swap 点で瞬時に切らず、短い窓でクロスフェードして
+      // 滑らかに散り出す。粒子はこの区間ではまだ字形（同位置）なので、実文字と溶け合う。
+      const swapIn = smooth(0, swapWindow, s); // 0→1
+      // 収束（終端）: 字形完成(≈0.85)直後からゆっくり粒子を消し、実文字をゆるやかに立てる。
+      // 窓を広く重ねることで「硬い切替」を無くし、なめらかに集まって実テキストへ解決する。
+      const resolve = smooth(0.85, 1.0, s);
+      const textReveal = smooth(0.88, 1.0, s);
+      u.uSwap!.value = swapIn;
+      u.uResolve!.value = resolve;
+      if (firstResolveEl) firstResolveEl.style.opacity = String(1 - swapIn);
+      if (lastResolveEl) lastResolveEl.style.opacity = String(textReveal);
+    } else {
+      u.uSwap!.value = 1; // 進捗 0 から可視（実 DOM 文字の受け渡しゲート無し）
+      u.uResolve!.value = 0;
+    }
     u.uPointerActive!.value = 0;
 
     renderer.render(scene, camera);
@@ -484,6 +550,13 @@ export function glyphText(
     play() {
       playing = true;
       startLoop();
+    },
+    setProgress(progress: number) {
+      if (disposed) return;
+      const p = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+      lastProgress = Number.isFinite(p) ? p : 0;
+      // ループが回っていなければ（画面外・手動で停止中など）1 枚だけ描いて反映する。
+      if (!running) renderFrame();
     },
     destroy() {
       if (disposed) return;

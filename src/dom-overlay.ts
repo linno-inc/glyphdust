@@ -85,8 +85,8 @@ export function buildGlyphFromDOM(
   const el = document.querySelector(opts.selector);
   if (!el) return null;
 
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 2 || rect.height < 2) return null;
+  const elRect = el.getBoundingClientRect();
+  if (elRect.width < 2 || elRect.height < 2) return null;
 
   const random = opts.random ?? Math.random;
   const cs = window.getComputedStyle(el);
@@ -98,11 +98,25 @@ export function buildGlyphFromDOM(
   const fontWeight = cs.fontWeight || "600";
   const fontFamily = cs.fontFamily || "sans-serif";
 
-  // パディング/ボーダーを除いたコンテンツ左端・上端。
-  const padL = parseFloat(cs.paddingLeft) || 0;
-  const padT = parseFloat(cs.paddingTop) || 0;
-  const contentLeft = rect.left + padL;
-  const contentTop = rect.top + padT;
+  // 「実際に描画されたテキスト」の画面矩形を Range から取る。要素が display:flex や
+  // 中央寄せ・padding 付きの大きな箱でも、文字が実際に載っている場所へ粒子を合わせられる。
+  // 旧方式（要素ボックス左上を原点に描画）は、全画面 flex 箱などでテキストは中央なのに
+  // 粒子だけ左上へ大きくズレる footgun だった（AIエージェントは要素の作り方を選べない前提で
+  //  吸収する。提案者: 凜さん 2026-07-01）。Range 不可時のみ要素矩形へフォールバック。
+  let rect: DOMRect = elRect;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const tr = range.getBoundingClientRect();
+    if (tr.width >= 2 && tr.height >= 2) rect = tr;
+  } catch {
+    /* Range 不可 → 要素矩形のまま */
+  }
+
+  // Range 矩形はテキストにタイトなので、画面原点＝テキスト左上。
+  const contentLeft = rect.left;
+  const contentTop = rect.top;
+  const cwCss = rect.width;
 
   const res = opts.resolution ?? 2;
   const cw = Math.max(2, Math.ceil(rect.width * res));
@@ -116,7 +130,9 @@ export function buildGlyphFromDOM(
   ctx.clearRect(0, 0, cw, ch);
   ctx.scale(res, res); // 以降は CSS px 座標で描く
   ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
+  // 各行を canvas 幅の中央に描く。Range 矩形は実描画テキストにタイトなため、単一行は
+  // ぴったり充填し、複数行の中央寄せ（text-align:center や flex 中央）とも一致する。
+  ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   if ("letterSpacing" in ctx) {
@@ -142,7 +158,7 @@ export function buildGlyphFromDOM(
     const baseline = useMetrics
       ? lineTop + (lineHeight - (fbAsc + fbDesc)) / 2 + fbAsc
       : lineTop + (lineHeight - fontSize) / 2 + fallbackAscent;
-    ctx.fillText(line, 0, baseline);
+    ctx.fillText(line, cwCss / 2, baseline);
   });
 
   const { data } = ctx.getImageData(0, 0, cw, ch);
