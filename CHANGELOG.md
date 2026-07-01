@@ -4,6 +4,16 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3] — 2026-07-01
+
+Docs release for the agent-native positioning (メインターゲット = AIエージェント)。コードは変更なし。
+
+### Added
+
+- **`llms.txt`** — AIエージェント／codegen 向けの機械可読な最小 API 仕様（そのまま貼れる正しい
+  例つき）。npm パッケージに同梱し、CDN でも配信（`https://cdn.jsdelivr.net/npm/glyphdust/llms.txt`）。
+- README 冒頭に「for AI agents / codegen」導線と `llms.txt` へのリンクを追加。
+
 ## [0.6.2] — 2026-07-01
 
 AIエージェント第一（agent-native）方針のもとで `glyphText()` を強化する非破壊リリース

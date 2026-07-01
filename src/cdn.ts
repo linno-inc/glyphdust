@@ -15,4 +15,4 @@
 export { glyphText, type GlyphTextOptions, type GlyphTextHandle } from "./vanilla.js";
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.6.2";
+export const VERSION = "0.6.3";

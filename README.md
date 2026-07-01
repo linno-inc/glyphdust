@@ -4,6 +4,11 @@
 
 Pass any text and glyphdust dissolves it into thousands of GPU particles, scatters them into a cloud, reforms them into the next glyph, and finally **resolves into crisp, real DOM text** — all driven by a single scroll progress `0 → 1`.
 
+> **Building with an AI agent / codegen?** glyphdust is designed to be generated and driven by agents:
+> one import + one call, safe defaults, a single `progress 0→1` you drive from anything (scroll, timer,
+> agent, audio), and a machine-readable spec at [`llms.txt`](./llms.txt)
+> (CDN: `https://cdn.jsdelivr.net/npm/glyphdust/llms.txt`). Zero-install `<script>` usage below.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/linno-inc/glyphdust/main/docs/demo.gif" alt="glyphdust: text dissolving into particles and resolving into real text" width="720" />
 </p>

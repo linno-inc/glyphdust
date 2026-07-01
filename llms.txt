@@ -1,0 +1,121 @@
+# glyphdust
+
+> Scroll/agent-driven **text → particles → glyph → real-text resolve** for the web (WebGL/three.js).
+> You animate everything from a single progress `0 → 1`. Two entry points: a **React-free one call
+> `glyphText()`**, or a **`<GlyphDust>`** react-three-fiber component. MIT. npm package: `glyphdust`.
+
+Designed for AI agents / codegen: minimal required config, safe defaults, and one `progress 0→1`
+you can drive from anything — scroll, a timer, an AI agent, audio, sensor data. Copy an example
+below and change the text; it works as-is.
+
+Current version: 0.6.2.
+
+## Install
+
+- **npm / bundler (vanilla `glyphText`)**: `npm i glyphdust three`
+- **npm / React (`<GlyphDust>`)**: `npm i glyphdust three @react-three/fiber react react-dom`
+  (`three`, `@react-three/fiber`, `react`, `react-dom` are peerDependencies.)
+- **CDN, zero install (vanilla only)**: one script tag exposes a global `glyphdust` with
+  `three` bundled in — no `npm install`, no bundler:
+  `<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.6.2"></script>`
+  Pin a version (`@0.6.2`) in production.
+
+## `glyphText(target, text, options?) → handle`  (React-free, one call)
+
+Creates a `<canvas>` inside `target`, boots three.js, and animates particles into `text`.
+
+- `target`: CSS selector or `HTMLElement`. The canvas fills it — give the box a size.
+- `text`: word/phrase; `\n` = line break. Drives the auto sequence + the reduced-motion fallback.
+- returns a **handle**: `{ canvas, play(), pause(), restart(), setProgress(p /*0..1*/), destroy() }`.
+
+Minimal — autoplays (scatter → text, then holds), needs only `three`:
+```js
+import { glyphText } from "glyphdust";
+glyphText("#hero", "LINNO");
+```
+
+Zero-install via CDN:
+```html
+<div id="hero" style="width:100vw;height:100vh"></div>
+<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.6.2"></script>
+<script>glyphdust.glyphText("#hero", "LINNO")</script>
+```
+
+### Options (all optional)
+`preset`: `"default"|"minimal"|"lively"|"glow"` · `style` · `colors` `{ink,accent,accentRatio}` ·
+`count` (desktop 11000 / mobile 5200) · `spread` (1.3) · `duration` seconds (3.6) · `delay` ·
+`loop` · `pingpong` · `playOnView` (true) · `autoplay` (true) · `resolveToDom` (false) ·
+`maxDpr` (1.75) · `cameraZ` (7) · `cameraFov` (42) · `keyframes` (override the sequence) ·
+`fallback` (true).
+
+### Drive progress yourself — scroll / agent / timeline  (`autoplay:false` + `setProgress`)
+```js
+const h = glyphText("#hero", "LINNO", { autoplay: false });
+addEventListener("scroll", () => {
+  const p = scrollY / (document.body.scrollHeight - innerHeight);
+  h.setProgress(p);            // 0 → start, 1 → end. Call every frame from any source.
+});
+// An AI agent / audio / timeline can call h.setProgress(x) the same way.
+```
+
+### Resolve into real, selectable DOM text  (`resolveToDom:true` + keyframe `domSelector`)
+Put the real text in the DOM. Particles are sampled from those elements (pixel-aligned) and
+cross-fade into the real text at the ends — the finale is actual, selectable, accessible text.
+In the **vanilla** API, `resolveToDom` is a **top-level option** and each text keyframe carries a
+`domSelector`. The DOM elements may be flex-centered/padded — alignment uses the text's *actual
+painted box*, so it won't drift.
+```html
+<div id="hero" style="position:relative;width:100vw;height:100vh"></div>
+<!-- real text, any styling; keep each element tight to its text (e.g. transform-centered) -->
+<div id="a" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">LINNO</div>
+<div id="b" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);opacity:0">WORLD</div>
+```
+```js
+const h = glyphText("#hero", "LINNO / WORLD", {
+  autoplay: false,
+  resolveToDom: true,
+  keyframes: [
+    { type: "text",    text: "LINNO", domSelector: "#a" },
+    { type: "scatter", spread: 0.4 },
+    { type: "text",    text: "WORLD", domSelector: "#b" },
+  ],
+});
+addEventListener("scroll", () =>
+  h.setProgress(scrollY / (document.body.scrollHeight - innerHeight)));
+```
+
+## `<GlyphDust>` — React (react-three-fiber) component
+
+For React apps. Render it in your layout and pass `keyframes`. Scroll-driven by default. Here
+`resolveToDom` is a **per-keyframe** flag (on the text keyframe), alongside `domSelector`.
+```tsx
+import { GlyphDust } from "glyphdust";
+<GlyphDust
+  keyframes={[
+    { type: "text",    text: "Hello", domSelector: "#headline" },
+    { type: "scatter", spread: 1 },
+    { type: "text",    text: "WORLD", dense: true, resolveToDom: true },
+  ]}
+/>
+```
+
+## Keyframe types
+- `{ type: "text", text, dense?, domSelector?, resolveToDom?, font?, segments?, worldW?, offsetX?, offsetY? }`
+- `{ type: "scatter", spread? }`
+
+Progress `0→1` auto-distributes across keyframes; a final text keyframe forms by ~0.85 and holds.
+
+## Gotchas
+- **three.js is required** — peer dependency for the npm builds; bundled into the CDN build.
+- **CDN build is vanilla-only** — the `<script>` global `glyphdust` exposes `glyphText` + `VERSION`,
+  not the React `<GlyphDust>` (React is intentionally excluded from that bundle).
+- **`resolveToDom` needs a real DOM element per text keyframe** (`domSelector`). Without it the word
+  stays as particles.
+- **Accessibility / resilience**: `prefers-reduced-motion` or no-WebGL → static fallback text
+  (set `fallback:false` to opt out).
+- **`glyphText` with `autoplay:false` does not move by itself** — you must call `setProgress`.
+
+## Links
+- README: https://github.com/linno-inc/glyphdust#readme
+- npm: https://www.npmjs.com/package/glyphdust
+- Repo: https://github.com/linno-inc/glyphdust
