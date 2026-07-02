@@ -138,6 +138,39 @@ function fillScatterCluster(
   }
 }
 
+/** canvas 幅に対する字形の最大占有率（両端に 4% ずつ余白を残す）。 */
+const MAX_INK_RATIO = 0.92;
+
+/** font 文字列の px 数値を ratio 倍に置き換える（下限 8px）。 */
+function scaleFontPx(font: string, ratio: number): string {
+  return font.replace(/(\d+(?:\.\d+)?)px/, (_, px: string) => {
+    const size = Math.max(8, Math.floor(parseFloat(px) * ratio));
+    return `${size}px`;
+  });
+}
+
+/**
+ * 最長行が canvas 幅に収まるようフォントを自動縮小した font 文字列を返す。
+ * 固定フォントサイズのまま長文（例「こんにちは、凜さん」）を描くと canvas から
+ * はみ出して字形が左右見切れするため、必ず通す（発見: Claude 2026-07-02、
+ * morphTo ストリーミングの実ブラウザ検証で長文が切れた）。収まっていれば無変更。
+ */
+function fitFontToWidth(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  font: string,
+  cw: number,
+): string {
+  ctx.font = font;
+  let maxW = 0;
+  for (const line of lines) {
+    maxW = Math.max(maxW, ctx.measureText(line).width);
+  }
+  const limit = cw * MAX_INK_RATIO;
+  if (maxW <= limit || maxW === 0) return font;
+  return scaleFontPx(font, limit / maxW);
+}
+
 /** レイアウト済みのラン（1 区間ぶんの文字＋確定書体）。 */
 interface SegRun {
   text: string;
@@ -179,6 +212,24 @@ function drawSegmentedLines(
   align: "center" | "left",
   leftPad: number,
 ): void {
+  // 最長行が canvas 幅を超えるときは全ランのフォントを一律縮小（比率維持で見切れ防止）。
+  let maxTotal = 0;
+  for (const runs of runLines) {
+    let total = 0;
+    for (const r of runs) {
+      ctx.font = r.font;
+      total += ctx.measureText(r.text).width;
+    }
+    maxTotal = Math.max(maxTotal, total);
+  }
+  const limit = cw * MAX_INK_RATIO;
+  if (maxTotal > limit && maxTotal > 0) {
+    const ratio = limit / maxTotal;
+    runLines = runLines.map((runs) =>
+      runs.map((r) => ({ text: r.text, font: scaleFontPx(r.font, ratio) })),
+    );
+  }
+
   ctx.fillStyle = "#000";
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
@@ -233,7 +284,7 @@ export function buildTextTargets(
     ctx.fillStyle = "#000";
     ctx.textAlign = align === "left" ? "left" : "center";
     ctx.textBaseline = "middle";
-    ctx.font = opts.font;
+    ctx.font = fitFontToWidth(ctx, lines, opts.font, cw);
 
     // 左寄せ時は左端に余白を取り、各行を揃える。
     const drawX = align === "left" ? cw * 0.04 : cw / 2;
@@ -308,7 +359,7 @@ export function buildDenseTextTargets(
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = opts.font;
+    ctx.font = fitFontToWidth(ctx, lines, opts.font, cw);
 
     const blockH = lh * (lines.length - 1);
     lines.forEach((line, i) => {

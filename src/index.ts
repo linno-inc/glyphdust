@@ -6,7 +6,7 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.6.3";
+export const VERSION = "0.7.0";
 
 // 文字 → 粒子ターゲット生成（Task-002）
 export {
@@ -61,6 +61,8 @@ export {
   glyphText,
   type GlyphTextOptions,
   type GlyphTextHandle,
+  type MorphToOptions,
+  type ScatterOptions,
 } from "./vanilla.js";
 
 // 公開型（Task-006 / 007）

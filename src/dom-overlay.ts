@@ -203,6 +203,142 @@ export function buildGlyphFromDOM(
   return out;
 }
 
+/** {@link alignGlyphOverlay} のオプション。 */
+export interface AlignGlyphOverlayOptions {
+  /** 重ねる 1 行テキスト（`\n` は呼び出し側で除去しておく）。 */
+  text: string;
+  /** 粒子サンプリングに使った font 文字列（weight / family を抽出する）。 */
+  font: string;
+  /** canvas の実表示サイズ（CSS px）。 */
+  viewportW: number;
+  viewportH: number;
+  /** z=0 平面の可視ワールド幅（{@link viewSizeAtZ0} の `worldW`）。 */
+  visibleWorldW: number;
+}
+
+/**
+ * 実テキスト要素を「粒子ターゲット群の字形」へピクセル整列させる
+ * （left/top/font-size/font-family/font-weight を直接設定する）。
+ *
+ * 字送り幅(advance)ではなく「実際のインク範囲」をオフスクリーン canvas でピクセル走査し、
+ * インクの中心を粒子グリフ矩形の中心へ合わせる（L と O など左右ベアリングが非対称な語は
+ * advance 基準だと横にズレる）。morphTo ストリーミングの「本物のテキストへ解決」で使う
+ * （提案者: 凜さん 2026-07-02「ちゃんとしたテキストに収束するように」。
+ * アルゴリズムは GlyphPoints.positionOverlay と同一）。
+ *
+ * @returns 整列できたら true（rect 算出不能・SSR では false）。
+ */
+export function alignGlyphOverlay(
+  el: HTMLElement,
+  targets: Float32Array,
+  opts: AlignGlyphOverlayOptions,
+): boolean {
+  if (typeof document === "undefined") return false;
+  const rect = computeScreenRect(
+    targets,
+    opts.viewportW,
+    opts.viewportH,
+    opts.visibleWorldW,
+  );
+  if (!rect || rect.width < 2 || rect.height < 2) return false;
+
+  // font 文字列（例 "900 260px 'Helvetica Neue', Helvetica, sans-serif"）から weight / family。
+  const fontMatch = opts.font.match(/^\s*(\d+)\s+[\d.]+px\s+(.+)$/);
+  const fontWeight = fontMatch?.[1] ?? "900";
+  const fontFamily = fontMatch?.[2] ?? "sans-serif";
+  const text = opts.text;
+  const ctx = document.createElement("canvas").getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  let positioned = false;
+  if (ctx && text) {
+    // 1) 基準サイズで描いて塗りピクセルの bbox を実測。
+    const baseSize = 200;
+    ctx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
+    const advBase = ctx.measureText(text).width;
+    const pad = Math.ceil(baseSize * 0.6);
+    const cw = Math.ceil(advBase + pad * 2);
+    const ch = Math.ceil(baseSize * 1.8);
+    const oc = document.createElement("canvas");
+    oc.width = cw;
+    oc.height = ch;
+    const octx = oc.getContext("2d", { willReadFrequently: true });
+    if (octx && cw > 0 && ch > 0) {
+      const drawX = pad;
+      const drawY = Math.round(ch * 0.72);
+      octx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
+      octx.textAlign = "left";
+      octx.textBaseline = "alphabetic";
+      octx.fillStyle = "#000";
+      octx.fillText(text, drawX, drawY);
+      const data = octx.getImageData(0, 0, cw, ch).data;
+      let minX = cw;
+      let maxX = 0;
+      let minY = ch;
+      let maxY = 0;
+      let found = 0;
+      for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
+          if (data[(y * cw + x) * 4 + 3]! > 20) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            found++;
+          }
+        }
+      }
+      if (found > 0 && maxX > minX) {
+        // 2) インク幅を粒子グリフ幅に合わせて fontSize を決定。
+        const fontSize = baseSize * (rect.width / (maxX - minX));
+        const scale = fontSize / baseSize;
+        const inkCenterXFromStart = ((minX + maxX) / 2 - drawX) * scale;
+        const inkCenterYFromBaseline = ((minY + maxY) / 2 - drawY) * scale;
+        // line-height:1 のときの「要素頂点 → ベースライン」距離。
+        ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        const fm = ctx.measureText(text);
+        const leading =
+          fontSize - (fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent);
+        const baselineFromTop = leading / 2 + fm.fontBoundingBoxAscent;
+        // 3) インク中心 = 粒子グリフ矩形の中心 となるよう left/top を決める。
+        const targetCx = rect.left + rect.width / 2;
+        const targetCy = rect.top + rect.height / 2;
+        el.style.display = "block";
+        el.style.textAlign = "left";
+        el.style.whiteSpace = "nowrap";
+        el.style.width = "auto";
+        el.style.height = "auto";
+        el.style.fontFamily = fontFamily;
+        el.style.fontWeight = fontWeight;
+        el.style.fontSize = `${fontSize}px`;
+        el.style.left = `${targetCx - inkCenterXFromStart}px`;
+        el.style.top = `${targetCy - inkCenterYFromBaseline - baselineFromTop}px`;
+        positioned = true;
+      }
+    }
+  }
+
+  // フォールバック（canvas 不可）: 矩形フィット。
+  if (!positioned) {
+    const measureSize = 100;
+    let fontSize = rect.height * 0.92;
+    if (ctx && text) {
+      ctx.font = `${fontWeight} ${measureSize}px ${fontFamily}`;
+      const mw = ctx.measureText(text).width;
+      if (mw > 0) fontSize = measureSize * (rect.width / mw);
+    }
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.top}px`;
+    el.style.width = `${rect.width}px`;
+    el.style.height = `${rect.height}px`;
+    el.style.fontFamily = fontFamily;
+    el.style.fontWeight = fontWeight;
+    el.style.fontSize = `${fontSize}px`;
+  }
+  return true;
+}
+
 /** 画面座標（px・左上原点）での字形矩形。実 DOM 文字を重ねるのに使う。 */
 export interface GlyphScreenRect {
   left: number;
