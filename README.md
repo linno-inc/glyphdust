@@ -198,7 +198,7 @@ handle.destroy();    // remove the canvas, free GPU resources, disconnect observ
 
 - **`target`** — a CSS selector or an `HTMLElement`. The canvas fills it (so give the box a size).
 - **`text`** — the word/phrase. `\n` for line breaks.
-- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), destroy() }`.
+- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), morphTo(text), scatter(), destroy() }`.
 
 By default it scatters particles, then forms the text and holds (the last text keyframe
 settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
@@ -221,6 +221,35 @@ settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
 | `cameraZ` / `cameraFov` | `number` | `7` / `42` | Camera position / vertical FOV. |
 | `keyframes` | `Keyframe[]` | scatter → text | Override the auto sequence entirely. |
 | `fallback` | `boolean` | `true` | On reduced-motion / no-WebGL, draw static text instead of a blank box. |
+| `morphDuration` | `number` | `1.6` | Default seconds per `morphTo()` / `scatter()` morph (streaming). |
+
+#### Streaming — say new words on the fly (`morphTo` / `scatter`)
+
+For AI agents that decide their words **at runtime**: `morphTo(text)` re-converges the
+particles from wherever they are right now into the new text — same instance, same canvas,
+same WebGL context, no re-creation. Each morph ends by cross-fading into **real crisp DOM
+text** (set `resolve: false` to keep the particle finish).
+
+```js
+const h = glyphText("#hero", "HELLO");
+
+await h.morphTo("THINKING…");   // particles re-form into the new word, then resolve to real text
+await h.morphTo("答えは 42");    // await = wait for convergence (returns true)
+await h.scatter();              // no words → melt into a cloud
+
+// Or stream without waiting — latest wins, interrupted morphs resolve false:
+h.morphTo("こん"); h.morphTo("こんにち"); h.morphTo("こんにちは");
+```
+
+- Calling `morphTo` during a morph retargets mid-flight from the particles' current
+  positions (no jump, no flicker).
+- The returned promise resolves `true` when the word has settled, `false` if it was
+  superseded by a newer `morphTo` (or the handle was destroyed).
+- Per-call options: `{ duration, resolve, font, dense, worldW, offsetX, offsetY }`.
+- Long text auto-fits (the glyph shrinks to stay fully visible). Multi-line text keeps the
+  particle finish (no DOM resolve).
+- Under reduced-motion / no-WebGL, `morphTo` updates the static fallback text, so agent
+  output stays accessible.
 
 #### Drive it yourself — scroll, an agent, anything (`autoplay: false` + `setProgress`)
 

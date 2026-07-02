@@ -12,7 +12,13 @@
  * しない。グラフが three とブラウザ DOM だけで閉じるため、IIFE に React が混入しない。
  */
 
-export { glyphText, type GlyphTextOptions, type GlyphTextHandle } from "./vanilla.js";
+export {
+  glyphText,
+  type GlyphTextOptions,
+  type GlyphTextHandle,
+  type MorphToOptions,
+  type ScatterOptions,
+} from "./vanilla.js";
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.6.3";
+export const VERSION = "0.7.0";

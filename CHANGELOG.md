@@ -4,6 +4,34 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-07-02
+
+ストリーミング対応リリース（提案者: 凜さん 2026-07-02「ストリーミングでできるようにしたい」
+「ちゃんとしたテキストに収束するようにして」）。AIエージェントが**その場で決めた言葉**を、
+インスタンスの作り直しなしに次々出せるようにする。
+
+### Added
+
+- **`handle.morphTo(text, opts?) → Promise<boolean>`** — 表示中の粒子を「いまの姿」から
+  新しいテキストへ再収束させる。WebGL コンテキスト・canvas・シェーダは再利用（毎語
+  `destroy()`→`glyphText()` する必要なし）。モーフ中の再呼び出しは latest-wins で
+  途中の姿から向かい直す（置き換えられた Promise は `false`）。`await` で順次表示も可。
+  実装: 頂点属性 `aPos0/aPos1` の 2 スロットピンポン + CPU でのシェーダ位置再現スナップショット。
+- **`handle.scatter(opts?)`** — 言葉が無い状態（飛散雲）へ溶かす対の API。
+- **終端の実テキスト解決（既定 ON）** — 各モーフの終端で粒子を本物の crisp な DOM テキストへ
+  クロスフェード（`alignGlyphOverlay` で粒子字形へインク中心整列した overlay を自動生成・
+  2 枚ピンポン）。`{resolve:false}` で従来の粒子フィニッシュ。複数行は自動的に粒子フィニッシュ。
+- **`morphDuration` オプション** — `morphTo`/`scatter` の既定モーフ秒数（1.6）。
+- reduced-motion / WebGL 不可のフォールバックでも `morphTo` が静的テキストを書き換える
+  （エージェント出力がアクセシブルに保たれる）。
+- `examples/streaming.html` — 手入力・scatter・疑似エージェントのストリーミングデモ。
+
+### Fixed
+
+- **長いテキストの左右見切れ** — 固定フォントサイズがサンプリング canvas からはみ出す場合に
+  自動縮小して全体を収める（`fitFontToWidth`。例「こんにちは、凜さん」が切れていた）。
+  `buildTextTargets` / `buildDenseTextTargets` / segments 描画すべてに適用。
+
 ## [0.6.3] — 2026-07-01
 
 Docs release for the agent-native positioning (メインターゲット = AIエージェント)。コードは変更なし。
