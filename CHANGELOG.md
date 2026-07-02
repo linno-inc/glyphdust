@@ -4,6 +4,19 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-07-03
+
+### Fixed
+
+- **domSelector サンプリングの縦ずれ** — `buildGlyphFromDOM` のベースライン式が
+  Range 矩形（=字形ボックス、half-leading を含まない）を「行ボックス」とみなして
+  half-leading `(lineHeight - (fontAscent+fontDescent))/2` を余計に加算していた。
+  line-height がフォント実高さ（Helvetica ≈1.194em）から離れるほど粒子が縦にずれる
+  （例: line-height:1 × 192px の LINNO コーポレートサイトワードマークで粒子が
+  実文字より 18.7px 上に浮いた。発見: 凜さん 2026-07-03「コーポレートサイトでは
+  パーティクルとテキストがずれています」）。正しくは矩形上端 + fontAscent。
+  0.6.2 の検証（line-height 未指定 ≈1.2 ≒ 実高さ）では誤差 ≈0px で潜伏していた。
+
 ## [0.8.0] — 2026-07-03
 
 初期表示の終端も morphTo と同じ「実テキストへ凝縮」で締める（提案者: 凜さん 2026-07-02

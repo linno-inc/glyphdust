@@ -144,20 +144,26 @@ export function buildGlyphFromDOM(
     }
   }
 
-  // ベースライン位置をブラウザの行レイアウトに正確に合わせる。
-  // 行ボックス内では baseline = 行頂点 + half-leading + fontAscent。
-  // フォントの実アセント/ディセントは canvas の measureText から取得する
+  // ベースライン位置をブラウザの実描画に正確に合わせる。
+  // Range.getBoundingClientRect が返す矩形は「字形ボックス」（fontAscent+fontDescent、
+  // half-leading を含まない）— 実測で rect.height === fbAsc+fbDesc（Chrome）。
+  // したがって矩形上端からのベースラインは単純に `fbAsc`（+ 行送り）。
+  // 旧式は矩形上端を「行ボックス上端」とみなして half-leading
+  // `(lineHeight - (fbAsc+fbDesc))/2` を足しており、line-height がフォント実高さ
+  // （Helvetica ≈1.194em）から離れるほど縦にずれた（例: line-height:1 × 192px の
+  // コーポレートサイトワードマークで -18.7px、粒子が実文字より上に浮いた。
+  // 発見: 凜さん 2026-07-03「パーティクルとテキストがずれています」）。
+  // フォントの実アセントは canvas の measureText から取得する
   // （近似 ascentRatio=0.82 では実フォントと数 px ずれ、DOM 整列が崩れるため）。
   const fm = ctx.measureText(lines[0] ?? "M");
   const fbAsc = fm.fontBoundingBoxAscent;
-  const fbDesc = fm.fontBoundingBoxDescent;
-  const useMetrics = Number.isFinite(fbAsc) && Number.isFinite(fbDesc);
+  const useMetrics = Number.isFinite(fbAsc);
   const fallbackAscent = fontSize * (opts.ascentRatio ?? 0.82);
   lines.forEach((line, i) => {
     const lineTop = i * lineHeight;
     const baseline = useMetrics
-      ? lineTop + (lineHeight - (fbAsc + fbDesc)) / 2 + fbAsc
-      : lineTop + (lineHeight - fontSize) / 2 + fallbackAscent;
+      ? lineTop + fbAsc
+      : lineTop + fallbackAscent;
     ctx.fillText(line, cwCss / 2, baseline);
   });
 
