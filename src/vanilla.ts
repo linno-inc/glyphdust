@@ -632,20 +632,33 @@ export function glyphText(
       if (lastResolveEl) lastResolveEl.style.opacity = String(textReveal);
     } else if (stream) {
       u.uSwap!.value = 1;
-      // 出だし: 直前モーフの実テキスト（と粒子の消え具合）を短い窓で粒子へ溶かし戻す。
-      const back = smooth(0, 0.12, s); // 0→1
+      // 出だし: 直前モーフの実テキストを「ぼやけながら」粒子へ溶かし戻す
+      // （フェードだけだと消えた瞬間が分かる。ボケを足すと粒子雲に還る感じになる）。
+      const back = smooth(0, 0.22, s); // 0→1
       const backResolve = stream.prevResolve0 * (1 - back);
-      // 終端: 粒子をフェードアウトし、本物の実テキストを立てる（粒子の消失より少し遅らせ、
-      // 二重像にならないクリーンな受け渡しにする。resolveMode と同じカーブ思想）。
-      const endResolve = stream.resolveEl ? smooth(0.85, 1.0, s) : 0;
-      const reveal = stream.resolveEl ? smooth(0.88, 1.0, s) : 0;
+      // 終端: 「収束が終わってから切り替える」のをやめる。粒子がまだ飛んでいる最中
+      // （字形形成 0.8 より手前）から実テキストを強いボケ＋低不透明度で滲み出させ、
+      // 粒子の着地と同時にピントが合い、着地した粒子から溶けて一体化する。
+      // 2 段階（収束完了→切替）が知覚できた旧カーブ（resolve 0.8→0.99 / reveal 0.82→1.0）
+      // への凜さんフィードバック 2026-07-02「パーティクルが収束してその後テキストに
+      // 切り替わるのがわかっちゃう。自然にパーティクルからテキストになるように」を受けた設計。
+      const endResolve = stream.resolveEl ? smooth(0.68, 0.97, s) : 0;
+      const reveal = stream.resolveEl ? smooth(0.52, 0.92, s) : 0;
       u.uResolve!.value = Math.max(backResolve, endResolve);
       if (stream.prevOverlay && stream.prevOverlay !== stream.resolveEl) {
-        stream.prevOverlay.style.opacity = String(
-          stream.prevOverlayOp0 * (1 - back),
-        );
+        const prevOp = stream.prevOverlayOp0 * (1 - back);
+        stream.prevOverlay.style.opacity = String(prevOp);
+        const prevBlur = back * 6;
+        stream.prevOverlay.style.filter =
+          prevBlur > 0.1 && prevOp > 0.01 ? `blur(${prevBlur.toFixed(1)}px)` : "";
       }
-      if (stream.resolveEl) stream.resolveEl.style.opacity = String(reveal);
+      if (stream.resolveEl) {
+        stream.resolveEl.style.opacity = String(reveal);
+        // 粒子雲の「まだ形になっていない」うちは強くぼかし、着地に合わせてピントを合わせる。
+        const blur = (1 - smooth(0.52, 0.97, s)) * 7;
+        stream.resolveEl.style.filter =
+          blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+      }
     } else {
       u.uSwap!.value = 1; // 進捗 0 から可視（実 DOM 文字の受け渡しゲート無し）
       u.uResolve!.value = 0;
@@ -796,8 +809,9 @@ export function glyphText(
     a0.needsUpdate = true;
     a1.needsUpdate = true;
 
-    // 最後が text なら 0.85 で形成し切り、残りを「くっきり保持」に使う（既定タイムラインと同じ思想）。
-    const settleAt = targetIsText ? 0.85 : 1;
+    // 最後が text なら 0.8 で形成し切り、残り 0.8→1.0 を実テキストへの
+    // ゆったりしたクロスフェードに使う（0.85 では溶け合う時間が足りず切替が硬い）。
+    const settleAt = targetIsText ? 0.8 : 1;
     tl = {
       n: 2,
       times: [0, settleAt],
