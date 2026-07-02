@@ -4,6 +4,20 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-07-03
+
+初期表示の終端も morphTo と同じ「実テキストへ凝縮」で締める（提案者: 凜さん 2026-07-02
+「今ハローが表示されたけど、これはなんでパーティクルのままなんですか？」→ 初回と
+2 語目以降で終端表現が不統一だった）。
+
+### Changed
+
+- **`glyphText` の最初の表示（既定キーフレーム）も、終端で実テキストへ解決**するのが既定に。
+  粒子飛行中から実テキストがボケ＋低不透明度で滲み出し、着地とともにピントが合う
+  （morphTo の終端と同じカーブ）。初回 morphTo ではこの実テキストが粒子へ溶け戻る。
+- 新オプション **`resolve: false`**（`glyphText`）で従来の粒子フィニッシュに戻せる。
+  custom `keyframes` / `loop` / `pingpong` / 複数行テキストでは自動的に従来挙動。
+
 ## [0.7.0] — 2026-07-02
 
 ストリーミング対応リリース（提案者: 凜さん 2026-07-02「ストリーミングでできるようにしたい」

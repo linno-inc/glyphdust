@@ -8,7 +8,7 @@ Designed for AI agents / codegen: minimal required config, safe defaults, and on
 you can drive from anything — scroll, a timer, an AI agent, audio, sensor data. Copy an example
 below and change the text; it works as-is.
 
-Current version: 0.7.0.
+Current version: 0.8.0.
 
 ## Install
 
@@ -17,8 +17,8 @@ Current version: 0.7.0.
   (`three`, `@react-three/fiber`, `react`, `react-dom` are peerDependencies.)
 - **CDN, zero install (vanilla only)**: one script tag exposes a global `glyphdust` with
   `three` bundled in — no `npm install`, no bundler:
-  `<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.7.0"></script>`
-  Pin a version (`@0.7.0`) in production.
+  `<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.8.0"></script>`
+  Pin a version (`@0.8.0`) in production.
 
 ## `glyphText(target, text, options?) → handle`  (React-free, one call)
 
@@ -38,7 +38,7 @@ glyphText("#hero", "LINNO");
 Zero-install via CDN:
 ```html
 <div id="hero" style="width:100vw;height:100vh"></div>
-<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.7.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.8.0"></script>
 <script>glyphdust.glyphText("#hero", "LINNO")</script>
 ```
 
@@ -47,7 +47,9 @@ Zero-install via CDN:
 `count` (desktop 11000 / mobile 5200) · `spread` (1.3) · `duration` seconds (3.6) · `delay` ·
 `loop` · `pingpong` · `playOnView` (true) · `autoplay` (true) · `resolveToDom` (false) ·
 `maxDpr` (1.75) · `cameraZ` (7) · `cameraFov` (42) · `keyframes` (override the sequence) ·
-`fallback` (true) · `morphDuration` (1.6, default seconds per `morphTo`/`scatter`).
+`fallback` (true) · `morphDuration` (1.6, default seconds per `morphTo`/`scatter`) ·
+`resolve` (true — the initial text also condenses into real crisp DOM text at the end,
+same finish as `morphTo`; auto-disabled for custom `keyframes`/`loop`/`pingpong`/multi-line).
 
 ### Streaming — say new words at runtime  (`morphTo` / `scatter`)
 For agents that decide their words on the fly. `morphTo(text)` re-converges the particles

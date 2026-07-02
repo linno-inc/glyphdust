@@ -86,6 +86,14 @@ export interface GlyphTextOptions {
    */
   morphDuration?: number;
   /**
+   * 最初の表示（autoplay / setProgress 駆動の既定キーフレーム）の終端でも、粒子を
+   * 本物の実テキストへ凝縮解決する。既定 `true`（morphTo と表現を統一。
+   * 提案者: 凜さん 2026-07-02「なんで(最初の)ハローはパーティクルのままなんですか？」）。
+   * `false` で従来どおり粒子字形のまま保持。custom `keyframes` / `loop` / `pingpong` /
+   * 複数行テキストでは自動的に無効（従来挙動のまま）。
+   */
+  resolve?: boolean;
+  /**
    * 収束点で粒子を実 DOM テキストへ受け渡すか。既定 `false`（粒子字形を保持）。
    * `true` にすると glyphdust 本来の看板挙動になる: 終端で粒子をフェードアウトし、
    * 最後の text キーフレームに紐づく実 DOM 要素（`domSelector` 指定）を crisp な本物の
@@ -557,6 +565,38 @@ export function glyphText(
   let streaming = false; // 一度でも morphTo/scatter したら true（元タイムラインへは戻らない）
   let activeMaterial = material; // stream 移行で N=2 シェーダへ差し替わり得る
 
+  // 最初の表示（既定キーフレーム scatter→text）の終端も morphTo と同じ
+  // 「実テキストへ凝縮」で締める（表現の統一）。custom keyframes は resolveToDom
+  // （domSelector）の既存機構が担い、loop/pingpong は s が往復して overlay が
+  // パカつくため対象外。
+  let initResolveEl: HTMLElement | null = null;
+  if (
+    !options.keyframes &&
+    !resolveMode &&
+    options.resolve !== false &&
+    options.loop !== true &&
+    !text.includes("\n")
+  ) {
+    const o = nextOverlay(null);
+    if (o) {
+      const initText = text;
+      o.textContent = initText;
+      o.style.opacity = "0";
+      const finalBuf = buffers[n - 1];
+      if (finalBuf) {
+        const { worldW: visWNow } = viewSizeAtZ0(w, h, cameraFov, cameraZ);
+        const aligned = alignGlyphOverlay(o, finalBuf, {
+          text: initText,
+          font: DEFAULT_DENSE_FONT,
+          viewportW: w,
+          viewportH: h,
+          visibleWorldW: visWNow,
+        });
+        if (aligned) initResolveEl = o;
+      }
+    }
+  }
+
   // タイムラインのメタから補間スカラ（settle/burst/form）を算出。
   // renderFrame（毎フレーム uniform 用）と snapshotInto（morphTo の位置再現）で共有する。
   const computeScalars = (s: number) => {
@@ -661,7 +701,18 @@ export function glyphText(
       }
     } else {
       u.uSwap!.value = 1; // 進捗 0 から可視（実 DOM 文字の受け渡しゲート無し）
-      u.uResolve!.value = 0;
+      if (initResolveEl) {
+        // 最初の表示の終端も morphTo と同じ「凝縮して実テキストになる」カーブで締める。
+        const endResolve = smooth(0.68, 0.97, s);
+        const reveal = smooth(0.52, 0.92, s);
+        u.uResolve!.value = endResolve;
+        initResolveEl.style.opacity = String(reveal);
+        const blur = (1 - smooth(0.52, 0.97, s)) * 7;
+        initResolveEl.style.filter =
+          blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+      } else {
+        u.uResolve!.value = 0;
+      }
     }
     u.uPointerActive!.value = 0;
 
@@ -824,7 +875,8 @@ export function glyphText(
     u.uTimes!.value = [0, settleAt];
 
     // 直前モーフの実テキスト・粒子フェード状態を引き継ぐ（割り込みでも硬い切替をしない）。
-    const prevOverlay = stream?.resolveEl ?? null;
+    // 初回 morph では「最初の表示」の解決テキスト（initResolveEl）が引き継ぎ元。
+    const prevOverlay = stream?.resolveEl ?? initResolveEl;
     const prevOverlayOp0 = prevOverlay
       ? Math.min(1, Math.max(0, parseFloat(prevOverlay.style.opacity || "0") || 0))
       : 0;

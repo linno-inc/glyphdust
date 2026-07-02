@@ -222,6 +222,7 @@ settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
 | `keyframes` | `Keyframe[]` | scatter → text | Override the auto sequence entirely. |
 | `fallback` | `boolean` | `true` | On reduced-motion / no-WebGL, draw static text instead of a blank box. |
 | `morphDuration` | `number` | `1.6` | Default seconds per `morphTo()` / `scatter()` morph (streaming). |
+| `resolve` | `boolean` | `true` | The initial text also condenses into **real crisp DOM text** at the end (same finish as `morphTo`). `false` keeps the particle finish. Auto-disabled for custom `keyframes` / `loop` / `pingpong` / multi-line. |
 
 #### Streaming — say new words on the fly (`morphTo` / `scatter`)
 
