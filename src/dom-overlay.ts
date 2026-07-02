@@ -130,9 +130,21 @@ export function buildGlyphFromDOM(
   ctx.clearRect(0, 0, cw, ch);
   ctx.scale(res, res); // 以降は CSS px 座標で描く
   ctx.fillStyle = "#000";
-  // 各行を canvas 幅の中央に描く。Range 矩形は実描画テキストにタイトなため、単一行は
-  // ぴったり充填し、複数行の中央寄せ（text-align:center や flex 中央）とも一致する。
-  ctx.textAlign = "center";
+  // 各行の水平位置は要素の text-align に従う。旧実装は常に中央寄せで、
+  // 左揃えの複数行（行幅が違う）だと短い行が (最長行幅 − 行幅)/2 だけ右にずれた
+  // （実例: コーポレートサイトのタグライン2行目が 76.5px 右にゴースト。
+  // 発見: 凜さん 2026-07-03「やっぱずれてる」）。単一行は矩形がタイトなので
+  // どの揃えでも同一＝従来挙動不変。start/end は direction で解決する。
+  const dir = cs.direction === "rtl" ? "rtl" : "ltr";
+  const ta = cs.textAlign;
+  const align: "left" | "center" | "right" =
+    ta === "center"
+      ? "center"
+      : ta === "right" || (ta === "end" && dir === "ltr") || (ta === "start" && dir === "rtl")
+        ? "right"
+        : "left"; // left / start(ltr) / justify / その他
+  ctx.textAlign = align;
+  const lineX = align === "center" ? cwCss / 2 : align === "right" ? cwCss : 0;
   ctx.textBaseline = "alphabetic";
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   if ("letterSpacing" in ctx) {
@@ -164,7 +176,7 @@ export function buildGlyphFromDOM(
     const baseline = useMetrics
       ? lineTop + fbAsc
       : lineTop + fallbackAscent;
-    ctx.fillText(line, cwCss / 2, baseline);
+    ctx.fillText(line, lineX, baseline);
   });
 
   const { data } = ctx.getImageData(0, 0, cw, ch);

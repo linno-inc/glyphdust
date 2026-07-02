@@ -4,6 +4,17 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.2] — 2026-07-03
+
+### Fixed
+
+- **左揃え複数行の domSelector サンプリングで短い行が右にずれる** — `buildGlyphFromDOM`
+  が各行を常に中央寄せで描いていたため、text-align:left の複数行では短い行の粒子が
+  `(最長行幅 − 行幅)/2` だけ右にゴースト化した（実例: コーポレートサイトのタグライン
+  2行目「人じゃない。」が 76.5px 右へ。発見: 凜さん 2026-07-03「やっぱずれてる」）。
+  要素の text-align（left/center/right、start/end は direction で解決）に従って描画する
+  よう修正。単一行は矩形がタイトなのでどの揃えでも同一＝従来挙動不変。
+
 ## [0.8.1] — 2026-07-03
 
 ### Fixed
