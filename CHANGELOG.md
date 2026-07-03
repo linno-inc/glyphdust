@@ -4,6 +4,20 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] — 2026-07-04
+
+### Removed
+
+- **`interaction`（ポインタ反発・ドラッグ回転）を完全削除（破壊的変更）。** `GlyphDustProps.interaction` /
+  `GlyphInteraction` 型、`<GlyphDust>` のポインタ/ドラッグイベントリスナー、シェーダの
+  `uPointer`/`uPointerActive` uniform とワールド空間反発計算、ドラッグ慣性回転（`rot` /
+  `guard` 連動の recenter ロジック）を丸ごと除去。既定で有効だったこの機能が、
+  コーポレートサイトのヒーローで意図せずカーソル反応・ドラッグ回転を起こしていた
+  （提案者: 凜さん 2026-07-04「カーソルに反応するのは要らない」→「glyphdustライブラリ本体
+  から機能を完全削除」）。**移行**: `interaction` prop を渡しているコードは型エラーになる
+  ので削除する（`GlyphDustProps` から `interaction` フィールドごと除去したため）。
+  粒子は常にポインタ非反応・無回転になる。
+
 ## [0.8.3] — 2026-07-04
 
 ### Added

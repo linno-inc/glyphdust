@@ -25,8 +25,6 @@
  *  - `uSwap`         … 0..1 可視ゲート（最初のスワップ点まで 0）
  *  - `uResolve`      … 0..1 フィナーレで実 DOM 文字へ受け渡す減衰
  *  - `uReduced`      … 0/1 reduced-motion
- *  - `uPointer`      … vec3 ワールド空間のポインタ位置
- *  - `uPointerActive`… 0/1 ポインタ反発の有効化
  *  - `uSize`         … 基準点サイズ
  *  - `uPixelRatio`   … dpr
  *
@@ -83,8 +81,6 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uSwap;
   uniform float uResolve;
   uniform float uReduced;
-  uniform vec3 uPointer;
-  uniform float uPointerActive;
   uniform float uSize;
   uniform float uSizeScale;
   uniform float uDrift;
@@ -225,16 +221,7 @@ ${mixChain}
       pos.z += sin(uTime * 0.27 + ph * 2.3) * 0.06 * drift;
     }
 
-    // ワールド空間でポインタ反発（回転後の見た目に合わせ modelMatrix 経由）。
     vec4 world = modelMatrix * vec4(pos, 1.0);
-    if (uPointerActive > 0.5) {
-      vec3 diff = world.xyz - uPointer;
-      float dist = length(diff);
-      float radius = 1.3;
-      float force = (1.0 - smoothstep(0.0, radius, dist)) * 0.55;
-      world.xyz += normalize(diff + 0.0001) * force;
-    }
-
     vec4 mvPosition = viewMatrix * world;
     vDepth = -mvPosition.z;
     gl_Position = projectionMatrix * mvPosition;

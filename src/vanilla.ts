@@ -464,8 +464,6 @@ export function glyphText(
       uSwap: { value: 0 },
       uResolve: { value: 0 },
       uReduced: { value: 0 },
-      uPointer: { value: new THREE.Vector3(0, 0, 0) },
-      uPointerActive: { value: 0 },
       uSize: { value: 1 },
       uSizeScale: { value: style.size },
       uDrift: { value: style.drift },
@@ -714,7 +712,6 @@ export function glyphText(
         u.uResolve!.value = 0;
       }
     }
-    u.uPointerActive!.value = 0;
 
     // モーフ完走（保持区間まで到達）で Promise を解決。ループは止めない
     // （uTime の漂いで「生きて待っている」見た目を保つ。autoplay 定着後と同じ扱い）。

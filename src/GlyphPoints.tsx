@@ -65,8 +65,6 @@ interface GlyphUniforms {
   uSwap: THREE.IUniform<number>;
   uResolve: THREE.IUniform<number>;
   uReduced: THREE.IUniform<number>;
-  uPointer: THREE.IUniform<THREE.Vector3>;
-  uPointerActive: THREE.IUniform<number>;
   uSize: THREE.IUniform<number>;
   uSizeScale: THREE.IUniform<number>;
   uDrift: THREE.IUniform<number>;
@@ -87,8 +85,6 @@ export interface GlyphPointsProps {
   style: ResolvedStyle;
   cameraZ: number;
   cameraFov: number;
-  pointer: boolean;
-  drag: boolean;
   getProgress: () => number;
   /** 各キーフレームの正規化時刻（省略時は等間隔）。 */
   timing?: number[] | undefined;
@@ -110,8 +106,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
     style,
     cameraZ,
     cameraFov,
-    pointer: pointerEnabled,
-    drag: dragEnabled,
     getProgress,
     timing,
     resolveRef,
@@ -124,14 +118,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
   // 解決窓（per-keyframe resolveToDom）の実 DOM 要素キャッシュ。
   const windowElsRef = useRef<Map<string, HTMLElement | null>>(new Map());
   const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { size, gl } = useThree();
+  const { size } = useThree();
 
-  const pointer = useRef({ x: 0, y: 0, active: 0 });
-  const rot = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
-  const dragState = useRef({ down: false, lx: 0, ly: 0 });
   const stage = useRef(0);
-  // 「字形が読める度合い」を frame 間で共有（ドラッグの効き調整に使う）。
-  const guardRef = useRef(0);
 
   const n = keyframes.length;
 
@@ -269,8 +258,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uSwap: { value: 0 },
       uResolve: { value: 0 },
       uReduced: { value: 0 },
-      uPointer: { value: new THREE.Vector3(0, 0, 0) },
-      uPointerActive: { value: 0 },
       uSize: { value: 1 },
       uSizeScale: { value: style.size },
       uDrift: { value: style.drift },
@@ -452,58 +439,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [built]);
 
-  // ポインタ / ドラッグ。
-  useEffect(() => {
-    if (!pointerEnabled && !dragEnabled) return;
-    const el = gl.domElement;
-    const toNDC = (clientX: number, clientY: number) => {
-      const r = el.getBoundingClientRect();
-      return {
-        x: ((clientX - r.left) / r.width) * 2 - 1,
-        y: -(((clientY - r.top) / r.height) * 2 - 1),
-      };
-    };
-    const onMove = (e: PointerEvent) => {
-      if (pointerEnabled) {
-        const ndc = toNDC(e.clientX, e.clientY);
-        pointer.current.x = ndc.x;
-        pointer.current.y = ndc.y;
-        pointer.current.active = 1;
-      }
-      if (dragEnabled && dragState.current.down) {
-        const dx = e.clientX - dragState.current.lx;
-        const dy = e.clientY - dragState.current.ly;
-        const grip = 1.0 - guardRef.current * 0.85;
-        rot.current.vy += dx * 0.00035 * grip;
-        rot.current.vx += dy * 0.00025 * grip;
-        dragState.current.lx = e.clientX;
-        dragState.current.ly = e.clientY;
-      }
-    };
-    const onDown = (e: PointerEvent) => {
-      dragState.current.down = true;
-      dragState.current.lx = e.clientX;
-      dragState.current.ly = e.clientY;
-    };
-    const onUp = () => {
-      dragState.current.down = false;
-    };
-    const onLeave = () => {
-      pointer.current.active = 0;
-      dragState.current.down = false;
-    };
-    el.addEventListener("pointermove", onMove, { passive: true });
-    if (dragEnabled) el.addEventListener("pointerdown", onDown, { passive: true });
-    window.addEventListener("pointerup", onUp, { passive: true });
-    el.addEventListener("pointerleave", onLeave, { passive: true });
-    return () => {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointerleave", onLeave);
-    };
-  }, [gl, pointerEnabled, dragEnabled]);
-
   // 解像度に応じた点サイズ。マテリアル側 uniforms（クローン）を更新する。
   useEffect(() => {
     const mat = matRef.current;
@@ -533,12 +468,11 @@ export function GlyphPoints(props: GlyphPointsProps) {
     mat.needsUpdate = true;
   }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend]);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     const p = pointsRef.current;
     const mat = matRef.current;
     if (!p || !mat) return;
     const u = mat.uniforms as unknown as GlyphUniforms;
-    const d = Math.min(delta, 0.05);
 
     const raw = THREE.MathUtils.clamp(getProgress(), 0, 1);
     // スクロール進捗を直接ステージに反映（lerp 追従は間延びの原因になる）。
@@ -571,9 +505,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
       const formStart = 1 - smooth(times[0] ?? 0, times[1] ?? 1, s);
       form = Math.max(form, formStart);
     }
-    const guard = THREE.MathUtils.clamp(Math.max(settle, form), 0, 1);
-    guardRef.current = guard;
-
     let swapped = raw >= timeline.swapAt ? 1 : 0;
     // 粒子の消失（フェードアウト）。
     let resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
@@ -617,29 +548,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uBurst.value = burst * (1 - form);
     u.uSwap.value = swapped;
     u.uResolve.value = resolve;
-
-    u.uPointer.value.set(pointer.current.x * 3.2, pointer.current.y * 2.0, 0);
-    u.uPointerActive.value = pointer.current.active * (1.0 - guard);
-
-    // ドラッグ回転（慣性 + 飛散時の自転 + 字形整列で正面復帰）。
-    rot.current.x += rot.current.vx;
-    rot.current.y += rot.current.vy;
-    rot.current.vx *= 0.92;
-    rot.current.vy *= 0.92;
-    rot.current.y += d * 0.05 * (1.0 - guard);
-    const recenter = 0.02 + guard * 0.2;
-    const wrappedY = Math.atan2(
-      Math.sin(rot.current.y),
-      Math.cos(rot.current.y),
-    );
-    rot.current.y = THREE.MathUtils.lerp(
-      rot.current.y,
-      rot.current.y - wrappedY,
-      recenter,
-    );
-    rot.current.x = THREE.MathUtils.lerp(rot.current.x, 0, 0.04 + guard * 0.14);
-    p.rotation.x = rot.current.x;
-    p.rotation.y = rot.current.y;
 
     // resolveToDom: 解決先（自前オーバーレイ or 実 DOM 要素）の不透明度を
     // textReveal（少し遅らせた出現）に同期する。解決窓があるときは窓側が駆動済み。
