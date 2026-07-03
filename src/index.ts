@@ -6,7 +6,7 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.8.2";
+export const VERSION = "0.8.3";
 
 // 文字 → 粒子ターゲット生成（Task-002）
 export {

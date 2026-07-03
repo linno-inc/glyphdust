@@ -121,6 +121,8 @@ export function GlyphPoints(props: GlyphPointsProps) {
   const pointsRef = useRef<THREE.Points>(null);
   // domSelector 解決先の実 DOM 要素をキャッシュ（毎フレーム querySelector を避ける）。
   const resolveDomElRef = useRef<HTMLElement | null>(null);
+  // 解決窓（per-keyframe resolveToDom）の実 DOM 要素キャッシュ。
+  const windowElsRef = useRef<Map<string, HTMLElement | null>>(new Map());
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const { size, gl } = useThree();
 
@@ -154,7 +156,62 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const resolveText =
       last?.type === "text" ? last.text.replace(/\n/g, " ") : "";
     const swapAt = times[1] !== undefined ? times[1] * 0.15 : 0;
-    return { isText, isScatter, hasResolve, resolveText, swapAt };
+
+    // ── 実テキスト解決の「窓」（per-keyframe resolveToDom）──
+    // domSelector 付き text キーフレームの連続グループ（同一 selector = 収束→保持）ごとに、
+    // グループ内のどれかが resolveToDom:true なら解決窓を作る:
+    // 滞在中は粒子を uResolve で溶かし、実 DOM 要素をクロスフェード（+ボケ→ピント）で
+    // 立てる。離れる際は逆再生で粒子へ溶け戻る。従来は最終キーフレームしか解決できず、
+    // 途中の見出しでは「実テキストの裏に粒子が残って見える」ため、利用側が opacity を
+    // 手で振り付けるしかなかった。それをライブラリの標準機能にする
+    // （提案者: 凜さん 2026-07-04「テキストの裏にいるのが見える。そのまま使うようにしよう」）。
+    // 先頭グループは進捗 0 から実テキスト表示＝保持区間全体を使って粒子へ溶け出す。
+    // 最終グループは立った実テキストがそのまま残る（従来の終端 resolve と同じ着地）。
+    const windows: {
+      selector: string;
+      a: number; // 出現フェード開始
+      b: number; // 出現フェード完了
+      c: number; // 退場フェード開始
+      d: number; // 退場フェード完了
+      isStart: boolean;
+      isFinal: boolean;
+    }[] = [];
+    let gi = 0;
+    while (gi < n) {
+      const kf = keyframes[gi];
+      if (kf?.type !== "text" || !kf.domSelector) {
+        gi += 1;
+        continue;
+      }
+      let gj = gi;
+      while (gj + 1 < n) {
+        const nx = keyframes[gj + 1];
+        if (nx?.type !== "text" || nx.domSelector !== kf.domSelector) break;
+        gj += 1;
+      }
+      const wantsResolve = keyframes
+        .slice(gi, gj + 1)
+        .some((g) => g.type === "text" && g.resolveToDom === true);
+      if (wantsResolve) {
+        const t0 = times[gi] ?? 0;
+        const t1 = times[gj] ?? 1;
+        const rise = Math.max(0.006, t1 > t0 ? (t1 - t0) * 0.25 : 0.02);
+        windows.push({
+          selector: kf.domSelector,
+          // 収束の完了より少し前から滲み出す（「収束→切替」の2段階感を消す）。
+          a: t0 - rise * 0.4,
+          b: t0 + rise * 0.6,
+          // 先頭グループは保持区間全体でゆっくり粒子へ受け渡す。
+          c: gi === 0 ? t0 : t1 - rise,
+          d: t1,
+          isStart: gi === 0,
+          isFinal: gj === n - 1,
+        });
+      }
+      gi = gj + 1;
+    }
+
+    return { isText, isScatter, hasResolve, resolveText, swapAt, windows };
   }, [keyframes, n, times]);
 
   // geometry（aPos0..aPosN-1 + aSeed + aAccent）。
@@ -517,13 +574,41 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const guard = THREE.MathUtils.clamp(Math.max(settle, form), 0, 1);
     guardRef.current = guard;
 
-    const swapped = raw >= timeline.swapAt ? 1 : 0;
+    let swapped = raw >= timeline.swapAt ? 1 : 0;
     // 粒子の消失（フェードアウト）。
-    const resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
+    let resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
     // 実文字の出現（フェードイン）は粒子の消失より少し遅らせる。
     // 同じカーブだと粒子と実文字が同時に重なり二重像になるため、
     // 「粒子が消えてから文字が立つ」クリーンな受け渡しにする（0.92→1.0）。
-    const textReveal = timeline.hasResolve ? smooth(0.92, 1.0, raw) : 0;
+    let textReveal = timeline.hasResolve ? smooth(0.92, 1.0, raw) : 0;
+
+    // ── 解決窓（per-keyframe resolveToDom）──
+    // 窓があるときは、可視ゲート（swap）・粒子の溶解（resolve）・実テキストの
+    // 不透明度をすべて窓が駆動する（旧 swapAt / 終端 0.9-1.0 の固定カーブは使わない）。
+    if (timeline.windows.length > 0) {
+      swapped = 1;
+      let amtMax = 0;
+      for (const w of timeline.windows) {
+        const amt =
+          (w.isStart ? 1 : smooth(w.a, w.b, s)) *
+          (w.isFinal ? 1 : 1 - smooth(w.c, w.d, s));
+        let el = windowElsRef.current.get(w.selector);
+        if (el === undefined) {
+          el = document.querySelector<HTMLElement>(w.selector);
+          windowElsRef.current.set(w.selector, el);
+        }
+        if (el) {
+          el.style.opacity = String(amt);
+          // 滲み出し/溶け戻り中は軽くぼかし、定着でピントが合う（morphTo と同じ表現）。
+          const blur = (1 - amt) * 6;
+          el.style.filter =
+            amt > 0.01 && blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+        }
+        if (amt > amtMax) amtMax = amt;
+      }
+      resolve = amtMax;
+      textReveal = 0; // 旧経路（resolveRef / resolveDomSelector）は使わない
+    }
 
     u.uTime.value = state.clock.elapsedTime;
     u.uStage.value = s;
@@ -557,8 +642,8 @@ export function GlyphPoints(props: GlyphPointsProps) {
     p.rotation.y = rot.current.y;
 
     // resolveToDom: 解決先（自前オーバーレイ or 実 DOM 要素）の不透明度を
-    // textReveal（少し遅らせた出現）に同期する。
-    if (timeline.hasResolve) {
+    // textReveal（少し遅らせた出現）に同期する。解決窓があるときは窓側が駆動済み。
+    if (timeline.hasResolve && timeline.windows.length === 0) {
       let target: HTMLElement | null = resolveRef?.current ?? null;
       if (!target && resolveDomSelector) {
         if (!resolveDomElRef.current) {

@@ -4,6 +4,20 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] — 2026-07-04
+
+### Added
+
+- **`<GlyphDust>`（R3F）: per-keyframe `resolveToDom`（解決窓）** — 最終キーフレームだけ
+  でなく、途中の text キーフレーム（domSelector 付き）でも `resolveToDom: true` で
+  「粒子が集まる → 実 DOM テキストへ溶けて結晶化（ボケ→ピント）→ 離れると粒子へ
+  溶け戻る」が使えるように。同一 selector の連続キーフレーム（form→hold）は 1 つの
+  窓として扱い、先頭グループは進捗 0 から実テキスト表示・保持全体で粒子へ受け渡し、
+  最終グループは実テキストのまま残る。従来は途中の見出しで「実テキストの裏に粒子が
+  残って見える」ため利用側が opacity を手動振り付けするしかなかった
+  （提案者: 凜さん 2026-07-04「テキストの裏にいるのが見える。そのまま使うようにしよう」）。
+  窓が 1 つも無い場合は従来挙動のまま。
+
 ## [0.8.2] — 2026-07-03
 
 ### Fixed
