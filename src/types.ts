@@ -140,14 +140,6 @@ export interface GlyphStyle {
  */
 export type GlyphPreset = "default" | "minimal" | "lively" | "glow";
 
-/** インタラクション設定。 */
-export interface GlyphInteraction {
-  /** ポインタ追従（近傍反発）。既定 true。 */
-  pointer?: boolean;
-  /** ドラッグ回転（慣性つき）。既定 true。 */
-  drag?: boolean;
-}
-
 /** {@link GlyphDust} の props。 */
 export interface GlyphDustProps {
   /** キーフレーム列（最低 1、通常 text → scatter → text）。 */
@@ -164,8 +156,6 @@ export interface GlyphDustProps {
   count?: GlyphCount;
   /** r3f Canvas の dpr 範囲。既定 `[1, 1.75]`。 */
   dpr?: [number, number];
-  /** インタラクション設定。 */
-  interaction?: GlyphInteraction;
   /** カメラ設定。 */
   camera?: GlyphCamera;
   /**

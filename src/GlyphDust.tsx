@@ -60,7 +60,6 @@ export function GlyphDust(props: GlyphDustProps) {
     colors,
     count,
     dpr = DEFAULT_DPR,
-    interaction,
     camera,
     timing,
     fallback = null,
@@ -181,8 +180,6 @@ export function GlyphDust(props: GlyphDustProps) {
 
   const cameraZ = camera?.z ?? DEFAULT_CAMERA_Z;
   const cameraFov = camera?.fov ?? DEFAULT_CAMERA_FOV;
-  const pointerEnabled = interaction?.pointer ?? true;
-  const dragEnabled = interaction?.drag ?? true;
 
   const finalKf = keyframes[keyframes.length - 1];
   const hasResolve =
@@ -220,8 +217,6 @@ export function GlyphDust(props: GlyphDustProps) {
           style={resolvedStyle}
           cameraZ={cameraZ}
           cameraFov={cameraFov}
-          pointer={pointerEnabled}
-          drag={dragEnabled}
           getProgress={getProgress}
           timing={timing}
           resolveRef={useOwnOverlay ? resolveRef : undefined}

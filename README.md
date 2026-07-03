@@ -292,7 +292,6 @@ target shows plain centered text instead of a blank box.
 | `colors` | `GlyphColors` | see below | Particle ink / accent colors. |
 | `count` | `GlyphCount` | `{ desktop: 11000, mobile: 5200 }` | Particle count per device class. |
 | `timing` | `number[]` | even spacing | Normalized time `0..1` per keyframe (interpolation boundaries). Length must match `keyframes`. |
-| `interaction` | `GlyphInteraction` | `{ pointer: true, drag: true }` | Pointer repulsion / drag-to-rotate (with inertia). |
 | `camera` | `GlyphCamera` | `{ z: 7, fov: 42 }` | Camera position / vertical FOV. |
 | `dpr` | `[number, number]` | `[1, 1.75]` | r3f Canvas device-pixel-ratio range. |
 | `fallback` | `ReactNode` | — | Rendered on reduced-motion / no-WebGL (prevents a blank screen). |
