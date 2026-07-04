@@ -12,8 +12,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import {
+  alignGlyphOverlay,
   buildGlyphFromDOM,
-  computeScreenRect,
   viewSizeAtZ0,
 } from "./dom-overlay.js";
 import {
@@ -119,6 +119,11 @@ export function GlyphPoints(props: GlyphPointsProps) {
   const windowElsRef = useRef<Map<string, HTMLElement | null>>(new Map());
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const { size } = useThree();
+  // resize リスナーはマウント時に一度だけ張るため、常に最新の size を読めるよう ref 経由にする
+  // （size を直接クロージャに閉じ込めると、マウント後のリサイズで古い viewport 寸法のまま
+  // 再サンプリングし続け、粒子と DOM テキストがピクセルずれる）。
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
 
   const stage = useRef(0);
 
@@ -128,7 +133,22 @@ export function GlyphPoints(props: GlyphPointsProps) {
   // 既定: 最終キーフレームが text の場合は 0.85 で形成し切り、0.85→1.0 を「くっきり保持」区間にする
   //（最後の瞬間まで雲のままにせず、字形を読ませる／フィナーレ解決へ綺麗に受け渡すため）。
   const times = useMemo<number[]>(() => {
-    if (timing && timing.length === n) return timing.slice();
+    if (timing && timing.length === n) {
+      // bump()/smooth() や解決窓の計算はすべて times が [0,1] で単調非減少である
+      // ことを前提にしている。手書きの timing でここが崩れると、補間やフェード
+      // タイミングが無警告で破綻する（NaN にはならないが視覚的に無意味な値になる）。
+      // useMemo 内（timing/n/keyframes 変化時のみ）なので毎フレームのコストにはならない。
+      for (let i = 0; i < timing.length; i++) {
+        const t = timing[i]!;
+        if (t < 0 || t > 1 || (i > 0 && t < timing[i - 1]!)) {
+          console.warn(
+            `[glyphdust] \`timing\` は [0,1] の範囲で単調非減少である必要があります: ${JSON.stringify(timing)}`,
+          );
+          break;
+        }
+      }
+      return timing.slice();
+    }
     if (n <= 1) return [0];
     const lastIsText = keyframes[n - 1]?.type === "text";
     const end = lastIsText ? 0.85 : 1;
@@ -201,14 +221,26 @@ export function GlyphPoints(props: GlyphPointsProps) {
         // ぼかし（骨: (1-amt)*6px）がかかるため、ごく一部の最遅粒子がまだ収束し切って
         // いなくてもクロスフェードのボケが吸収し、境界のズレとしては見えない。
         // 加えて最低限の保持幅 minPlateau を必ず確保する。
-        const rise = Math.max(0.006, t1 > t0 ? (t1 - t0) * 0.25 : 0.02);
+        //
+        // rise/minPlateau は span（t1-t0）の 25%/15% が理想だが、span が狭いキーフレーム
+        // 構成では 2*rise+minPlateau が span を超え、旧実装は a を t0 にクランプするだけ
+        // だった。c（退場フェード開始 = t1-rise）は span に関わらず変わらないため、
+        // クランプされた a（→ b = a+rise）が c を追い越し「一瞬光ってすぐ消える」不具合が
+        // 再発した（0.8.6 が直したはずの不具合。凜さん 2026-07-04「また収束がスムーズ
+        // じゃなくなってる」）。ここでは rise と minPlateau を span に収まるよう比例縮小し、
+        // b <= c（フェードイン完了 <= フェードアウト開始）を span の広さによらず数式的に
+        // 保証する（0.001 は smooth() の a===b 除算 0 を避けるための下限）。
+        const span = Math.max(t1 - t0, 0);
+        const desiredRise = span > 0 ? span * 0.25 : 0.02;
+        const desiredPlateau = span * 0.15;
+        const totalDesired = desiredRise * 2 + desiredPlateau;
+        const shrink =
+          totalDesired > 0 && totalDesired > span ? span / totalDesired : 1;
+        const rise = Math.max(0.001, desiredRise * shrink);
+        const minPlateau = Math.max(0, desiredPlateau * shrink);
         const staggerCatchUp = t0 + style.stagger * 0.5 * (1 - t0);
-        const minPlateau = Math.max(0.006, (t1 - t0) * 0.15);
         const latestA = t1 - 2 * rise - minPlateau;
-        const a =
-          gi === 0
-            ? t0 - rise * 0.4
-            : Math.min(staggerCatchUp, Math.max(t0, latestA));
+        const a = gi === 0 ? t0 - rise * 0.4 : Math.min(staggerCatchUp, latestA);
         windows.push({
           selector: kf.domSelector,
           a,
@@ -297,10 +329,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
   );
 
   // resolveToDom: 実文字オーバーレイを粒子グリフにピクセル整列させる。
-  // 粒子グリフは最終キーフレームのフォント（既定 Helvetica Neue 900）でサンプリングされる。
-  // クロスフェードで字形がズレないよう、実文字も同じフォントファミリ／ウェイトにし、
-  // フォントサイズは「高さ基準」ではなく「粒子グリフの実幅にフィット」させる
-  // （幅広ワードマークは高さ基準だと痩せて中央に縮こまるため）。
+  // アルゴリズムは vanilla.ts の同種の解決処理と共通化されている（{@link alignGlyphOverlay}）。
   const positionOverlay = () => {
     const el = resolveRef?.current;
     if (!el || !timeline.hasResolve) return;
@@ -309,8 +338,6 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
     const { worldW: visW } = viewSizeAtZ0(vpW, vpH, cameraFov, cameraZ);
-    const rect = computeScreenRect(finalBuf, vpW, vpH, visW);
-    if (!rect) return;
 
     // 最終キーフレームのフォント文字列から family / weight を取り出す
     // （例 "900 260px 'Helvetica Neue', Helvetica, Arial, sans-serif"）。
@@ -319,104 +346,14 @@ export function GlyphPoints(props: GlyphPointsProps) {
       finalKf?.type === "text" && finalKf.font
         ? finalKf.font
         : DEFAULT_DENSE_FONT;
-    const fontMatch = fontStr.match(/^\s*(\d+)\s+[\d.]+px\s+(.+)$/);
-    const fontWeight = fontMatch?.[1] ?? "900";
-    const fontFamily = fontMatch?.[2] ?? "sans-serif";
 
-    // 実文字を粒子グリフへ厳密整列させる。
-    // 字送り幅(advance)ではなく「実際のインク範囲」をオフスクリーン canvas で
-    // ピクセル走査し、インクの中心を粒子グリフ矩形の中心へ合わせる。
-    // （L と O など左右ベアリングが非対称な語は advance 基準だと横にズレる。）
-    const text = timeline.resolveText;
-    const ctx = document.createElement("canvas").getContext("2d", {
-      willReadFrequently: true,
+    alignGlyphOverlay(el, finalBuf, {
+      text: timeline.resolveText,
+      font: fontStr,
+      viewportW: vpW,
+      viewportH: vpH,
+      visibleWorldW: visW,
     });
-
-    let positioned = false;
-    if (ctx && text) {
-      // 1) 基準サイズで描いて塗りピクセルの bbox を実測。
-      const baseSize = 200;
-      ctx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
-      const advBase = ctx.measureText(text).width;
-      const pad = Math.ceil(baseSize * 0.6);
-      const cw = Math.ceil(advBase + pad * 2);
-      const ch = Math.ceil(baseSize * 1.8);
-      const oc = document.createElement("canvas");
-      oc.width = cw;
-      oc.height = ch;
-      const octx = oc.getContext("2d", { willReadFrequently: true });
-      if (octx) {
-        const drawX = pad;
-        const drawY = Math.round(ch * 0.72);
-        octx.font = `${fontWeight} ${baseSize}px ${fontFamily}`;
-        octx.textAlign = "left";
-        octx.textBaseline = "alphabetic";
-        octx.fillStyle = "#000";
-        octx.fillText(text, drawX, drawY);
-        const data = octx.getImageData(0, 0, cw, ch).data;
-        let minX = cw;
-        let maxX = 0;
-        let minY = ch;
-        let maxY = 0;
-        let found = 0;
-        for (let y = 0; y < ch; y++) {
-          for (let x = 0; x < cw; x++) {
-            if (data[(y * cw + x) * 4 + 3]! > 20) {
-              if (x < minX) minX = x;
-              if (x > maxX) maxX = x;
-              if (y < minY) minY = y;
-              if (y > maxY) maxY = y;
-              found++;
-            }
-          }
-        }
-        if (found > 0) {
-          // 2) インク幅を粒子グリフ幅に合わせて fontSize を決定。
-          const fontSize = baseSize * (rect.width / (maxX - minX));
-          const scale = fontSize / baseSize;
-          // 描画原点(text 先頭, baseline)基準のインク中心オフセット（fitted px）。
-          const inkCenterXFromStart = ((minX + maxX) / 2 - drawX) * scale;
-          const inkCenterYFromBaseline = ((minY + maxY) / 2 - drawY) * scale;
-          // line-height:1 のときの「要素頂点 → ベースライン」距離。
-          ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-          const fm = ctx.measureText(text);
-          const leading = fontSize - (fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent);
-          const baselineFromTop = leading / 2 + fm.fontBoundingBoxAscent;
-          // 3) インク中心 = 粒子グリフ矩形の中心 となるよう left/top を決める。
-          const targetCx = rect.left + rect.width / 2;
-          const targetCy = rect.top + rect.height / 2;
-          el.style.display = "block";
-          el.style.textAlign = "left";
-          el.style.whiteSpace = "nowrap";
-          el.style.width = "auto";
-          el.style.height = "auto";
-          el.style.fontFamily = fontFamily;
-          el.style.fontWeight = fontWeight;
-          el.style.fontSize = `${fontSize}px`;
-          el.style.left = `${targetCx - inkCenterXFromStart}px`;
-          el.style.top = `${targetCy - inkCenterYFromBaseline - baselineFromTop}px`;
-          positioned = true;
-        }
-      }
-    }
-
-    // フォールバック（canvas 不可）: 従来の矩形フィット。
-    if (!positioned) {
-      const measureSize = 100;
-      let fontSize = rect.height * 0.92;
-      if (ctx && text) {
-        ctx.font = `${fontWeight} ${measureSize}px ${fontFamily}`;
-        const w = ctx.measureText(text).width;
-        if (w > 0) fontSize = measureSize * (rect.width / w);
-      }
-      el.style.left = `${rect.left}px`;
-      el.style.top = `${rect.top}px`;
-      el.style.width = `${rect.width}px`;
-      el.style.height = `${rect.height}px`;
-      el.style.fontFamily = fontFamily;
-      el.style.fontWeight = fontWeight;
-      el.style.fontSize = `${fontSize}px`;
-    }
   };
 
   // 初回 / フォント読込 / リサイズで再サンプリング・再配置（DOM とピタリ重ねる）。
@@ -428,9 +365,10 @@ export function GlyphPoints(props: GlyphPointsProps) {
         fovDeg: cameraFov,
         cameraZ,
         // 粒子がレンダリングされる canvas の実寸（CSS px）。
-        // window.innerWidth だとスクロールバー分ずれるため size を使う。
-        viewportW: size.width,
-        viewportH: size.height,
+        // window.innerWidth だとスクロールバー分ずれるため size を使う（常に最新値を
+        // 読むため ref 経由。理由は sizeRef 宣言部のコメント参照）。
+        viewportW: sizeRef.current.width,
+        viewportH: sizeRef.current.height,
       });
       if (!next) return;
       const attr = built.geo.getAttribute(glyphPositionAttribute(i)) as
@@ -543,11 +481,19 @@ export function GlyphPoints(props: GlyphPointsProps) {
       swapped = 1;
       let amtMax = 0;
       for (const w of timeline.windows) {
+        // isStart と isFinal が両方 true（＝キーフレーム全体が単一の domSelector 窓）
+        // だと amt は常に 1 になり、粒子は一切現れない。これは意図した挙動:
+        // isStart=「進捗0から既に解決済みなのでフェードイン不要」、isFinal=「最後まで
+        // 解決済みのままなのでフェードアウト不要」を素直に合成すると「常に解決済み」＝
+        // アニメーションすべき遷移がそもそも存在しない設定になる。
         const amt =
           (w.isStart ? 1 : smooth(w.a, w.b, s)) *
           (w.isFinal ? 1 : 1 - smooth(w.c, w.d, s));
         let el = windowElsRef.current.get(w.selector);
-        if (el === undefined) {
+        // el が取れているのに DOM から外れている（React の条件描画/キー変更で
+        // 差し替えられた等）場合は再取得する。isConnected を見ないと、差し替え後の
+        // 要素には一切書き込まれず無警告のまま外れた古い要素に opacity を流し続ける。
+        if (el === undefined || (el !== null && !el.isConnected)) {
           el = document.querySelector<HTMLElement>(w.selector);
           windowElsRef.current.set(w.selector, el);
         }
@@ -573,17 +519,28 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uResolve.value = resolve;
 
     // resolveToDom: 解決先（自前オーバーレイ or 実 DOM 要素）の不透明度を
-    // textReveal（少し遅らせた出現）に同期する。解決窓があるときは窓側が駆動済み。
-    if (timeline.hasResolve && timeline.windows.length === 0) {
-      let target: HTMLElement | null = resolveRef?.current ?? null;
-      if (!target && resolveDomSelector) {
-        if (!resolveDomElRef.current) {
+    // textReveal（少し遅らせた出現）に同期する。
+    // 自前オーバーレイ（domSelector 無しの最終キーフレーム）は解決窓（windows）の
+    // 対象に絶対に入らない（windows は domSelector 付きキーフレームだけを束ねるため）。
+    // 途中に domSelector 窓があっても、フィナーレの自前オーバーレイは独立して駆動する
+    // 必要がある。以前は `windows.length === 0` を条件にしていたため、途中に窓が
+    // ひとつでもあるとフィナーレの opacity が永久に 0 のまま固まっていた
+    // （resolveRef と resolveDomSelector を同列に windows.length===0 でガードしていた
+    // せい。resolveDomSelector 版フィナーレは窓ループが同じ要素を既に駆動しているので
+    // 二重駆動を避けるためそちらだけ引き続きガードする）。
+    if (timeline.hasResolve) {
+      const ownOverlay = resolveRef?.current ?? null;
+      if (ownOverlay) {
+        ownOverlay.style.opacity = String(textReveal);
+      } else if (resolveDomSelector && timeline.windows.length === 0) {
+        if (!resolveDomElRef.current || !resolveDomElRef.current.isConnected) {
           resolveDomElRef.current =
             document.querySelector<HTMLElement>(resolveDomSelector);
         }
-        target = resolveDomElRef.current;
+        if (resolveDomElRef.current) {
+          resolveDomElRef.current.style.opacity = String(textReveal);
+        }
       }
-      if (target) target.style.opacity = String(textReveal);
     }
   });
 
