@@ -192,9 +192,23 @@ export function GlyphPoints(props: GlyphPointsProps) {
         // 「形になる前に消えていく」ように見えた（凜さん 2026-07-04
         // 「収束する前にパーティクルズがスーって消えていく」）。
         // rise の開始をこの収束完了点まで送らせ、収束後にだけ透明化させる。
-        const staggerCatchUp = t0 + style.stagger * (1 - t0);
+        //
+        // ただし単純に「完全収束（100%）を待つ」と、退場フェード開始点
+        // （c = t1 - rise、stagger とは無関係な固定計算）に食い込み、保持区間
+        // （rise 完了〜退場開始）がほぼゼロになって「一瞬光ってすぐ消える」新たな
+        // 不具合を生んだ（凜さん 2026-07-04「また収束がスムーズじゃなくなってる」）。
+        // 折衷案: 待つのは実質収束点までの半分（0.5）に留める。rise 中は実テキストに
+        // ぼかし（骨: (1-amt)*6px）がかかるため、ごく一部の最遅粒子がまだ収束し切って
+        // いなくてもクロスフェードのボケが吸収し、境界のズレとしては見えない。
+        // 加えて最低限の保持幅 minPlateau を必ず確保する。
         const rise = Math.max(0.006, t1 > t0 ? (t1 - t0) * 0.25 : 0.02);
-        const a = gi === 0 ? t0 - rise * 0.4 : Math.min(staggerCatchUp, t1 - rise);
+        const staggerCatchUp = t0 + style.stagger * 0.5 * (1 - t0);
+        const minPlateau = Math.max(0.006, (t1 - t0) * 0.15);
+        const latestA = t1 - 2 * rise - minPlateau;
+        const a =
+          gi === 0
+            ? t0 - rise * 0.4
+            : Math.min(staggerCatchUp, Math.max(t0, latestA));
         windows.push({
           selector: kf.domSelector,
           a,

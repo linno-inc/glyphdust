@@ -4,6 +4,18 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.6] — 2026-07-04
+
+### Fixed
+
+- **0.8.5 の stagger 待ちが退場フェード開始点に食い込み、保持区間がほぼゼロになる
+  問題を修正。** 0.8.5 は出現フェードの開始を stagger の実質完全収束点まで送らせたが、
+  退場フェード開始点（`t1 - rise`）は変更しなかったため、狭い hold 幅の構成では
+  両者がほぼ衝突し「一瞬光ってすぐ消える」新たな不具合になった（発見: 凜さん
+  2026-07-04「また収束がスムーズじゃなくなってる」）。折衷案として、待つのは
+  実質収束点までの半分に留め（rise 中のぼかしが残りのズレを吸収する）、
+  最低限の保持幅（hold 幅の 15%）を必ず確保するよう修正。
+
 ## [0.8.5] — 2026-07-04
 
 ### Fixed

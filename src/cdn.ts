@@ -21,4 +21,4 @@ export {
 } from "./vanilla.js";
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.8.5";
+export const VERSION = "0.8.6";
