@@ -4,6 +4,20 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.5] — 2026-07-04
+
+### Fixed
+
+- **`<GlyphDust>` の per-keyframe resolveToDom（解決窓）で、粒子が収束し切る前に
+  透明化し始める問題を修正。** stagger（粒子ごとの到着タイミングのばらつき、既定
+  0.08）により最も遅れる粒子は、そのキーフレームの目標形状に `t0 + stagger*(1-t0)`
+  付近まで到達しない。旧式の解決窓は出現フェード（rise）を `t0` の直前後
+  （`t0 - rise*0.4`）に固定していたため、多くの粒子がまだ字形へ収束し切っていない
+  うちから透明化が始まり、「収束する前に粒子がスーっと消えていく」ように見えた
+  （発見: 凜さん 2026-07-04「収束する前にパーティクルズが消えていく」）。
+  出現フェードの開始点を stagger の実質収束完了点まで送らせるよう修正。
+  最終グループ（既定の単一 resolveToDom）や `isStart` グループの挙動は変化なし。
+
 ## [0.8.4] — 2026-07-04
 
 ### Removed

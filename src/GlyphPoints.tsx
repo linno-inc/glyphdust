@@ -184,12 +184,21 @@ export function GlyphPoints(props: GlyphPointsProps) {
       if (wantsResolve) {
         const t0 = times[gi] ?? 0;
         const t1 = times[gj] ?? 1;
+        // stagger（粒子ごとの到着タイミングばらつき）を考慮した「実質収束完了点」。
+        // 頂点シェーダの stageP = (uStage - aSeed*w)/(1-w) より、最も遅れる粒子
+        // （aSeed→1）がこのキーフレームの mix 目標（t0）に到達する raw progress は
+        // 概ね t0 + stagger*(1-t0)。旧式は rise 窓を t0 の直前後に置いていたため、
+        // stagger分だけ収束し切っていない粒子がいる間に透明化が始まり、
+        // 「形になる前に消えていく」ように見えた（凜さん 2026-07-04
+        // 「収束する前にパーティクルズがスーって消えていく」）。
+        // rise の開始をこの収束完了点まで送らせ、収束後にだけ透明化させる。
+        const staggerCatchUp = t0 + style.stagger * (1 - t0);
         const rise = Math.max(0.006, t1 > t0 ? (t1 - t0) * 0.25 : 0.02);
+        const a = gi === 0 ? t0 - rise * 0.4 : Math.min(staggerCatchUp, t1 - rise);
         windows.push({
           selector: kf.domSelector,
-          // 収束の完了より少し前から滲み出す（「収束→切替」の2段階感を消す）。
-          a: t0 - rise * 0.4,
-          b: t0 + rise * 0.6,
+          a,
+          b: a + rise,
           // 先頭グループは保持区間全体でゆっくり粒子へ受け渡す。
           c: gi === 0 ? t0 : t1 - rise,
           d: t1,
@@ -201,7 +210,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     }
 
     return { isText, isScatter, hasResolve, resolveText, swapAt, windows };
-  }, [keyframes, n, times]);
+  }, [keyframes, n, times, style.stagger]);
 
   // geometry（aPos0..aPosN-1 + aSeed + aAccent）。
   const built = useMemo(() => {
