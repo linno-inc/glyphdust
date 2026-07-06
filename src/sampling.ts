@@ -1,13 +1,14 @@
 /**
- * sampling.ts — 文字 → 粒子ターゲット座標の生成。
+ * sampling.ts — 文字・シェイプ → 粒子ターゲット座標の生成。
  *
- * オフスクリーン Canvas にテキストを描画し、塗りピクセルをサンプリングして
- * 各粒子のワールド座標ターゲット（Float32Array, xyz × count）を作る。
+ * オフスクリーン Canvas にテキスト（またはSVGパス）を描画し、塗りピクセルを
+ * サンプリングして各粒子のワールド座標ターゲット（Float32Array, xyz × count）を作る。
  * フォント非依存・任意文字対応（CJK 含む）。
  *
- * 2 つの戦略:
+ * 3 つの戦略:
  *  - {@link buildTextTargets}      … 通常密度。読める字形をフォールバック付きで生成。
  *  - {@link buildDenseTextTargets} … 高密度・均一カバレッジ。穴の目立たないワードマーク向け。
+ *  - {@link buildShapeTargets}     … SVG パスデータを形として塗る（アスペクト比保存）。
  *
  * いずれも SSR セーフ（`document` 不在時は原点クラスタ or 空配列を返し、例外を投げない）。
  */
@@ -48,6 +49,44 @@ export interface TextTargetOptions {
   /** テキスト寄せ。DOM 見出しと重ねるときは `"left"`。既定 `"center"`。 */
   align?: "center" | "left";
   /** 乱数生成器（ジッタ・フォールバック用）。既定 `Math.random`。 */
+  random?: Random;
+}
+
+/** {@link buildShapeTargets} のオプション。 */
+export interface ShapeTargetOptions {
+  /** SVG パスデータ（`d` 属性）。複数パスは配列（すべて塗りとして合成）。 */
+  path: string | string[];
+  /**
+   * パス座標系の表示範囲 `[minX, minY, width, height]`。
+   * 未指定なら SVG `getBBox()` で自動計測（SSR / 計測不能時はフォールバック）。
+   */
+  viewBox?: [number, number, number, number] | undefined;
+  /** 塗り規則。既定 `"nonzero"`。 */
+  fillRule?: "nonzero" | "evenodd";
+  /**
+   * シェイプのバウンディングボックスのワールド幅。
+   * テキスト系の「canvas 全幅をマップ」とは違い、形そのものの幅（アスペクト比保存）。
+   */
+  worldW: number;
+  /**
+   * シェイプのワールド高さの上限。アスペクト比により `worldW * (vbH/vbW)` が
+   * これを超える場合、比率を保ったまま縮小する（縦長シェイプが可視領域を
+   * はみ出すのを防ぐ。既定の worldW を使う呼び出し元が可視高さから渡す）。
+   */
+  maxWorldH?: number;
+  /** ワールド x オフセット（右が +）。既定 0。 */
+  offsetX?: number;
+  /** ワールド y オフセット（上が +）。既定 0。 */
+  offsetY?: number;
+  /** z 方向の厚み。既定 0.1。 */
+  thickness?: number;
+  /** ピクセル走査間隔。形は塗りが太いので密に拾う。既定 1。 */
+  step?: number;
+  /** オフスクリーン canvas 幅。既定 1024。 */
+  cw?: number;
+  /** オフスクリーン canvas 高さ。既定 1024。 */
+  ch?: number;
+  /** 乱数生成器。既定 `Math.random`。 */
   random?: Random;
 }
 
@@ -129,6 +168,57 @@ function fillScatterCluster(
     out[i * 3] = Math.cos(th) * r + offsetX;
     out[i * 3 + 1] = Math.sin(th) * r * 0.4 + offsetY;
     out[i * 3 + 2] = (random() - 0.5) * 0.2;
+  }
+}
+
+/**
+ * 塗りピクセル列を「シャッフル + 巡回割当」で粒子ターゲットへ変換する共通処理。
+ * インデックスを一度だけ Fisher–Yates シャッフルし、粒子へ巡回割当することで
+ * 各塗りピクセルに `floor/ceil(count / filled)` 個がほぼ均等に乗り、粗密ムラ・穴を防ぐ
+ * （旧・連番ストライド+乗算ハッシュ方式はハッシュの振れ幅がストライドの均等性を
+ * 打ち消し実質ランダム選択と同じになり、団子状のムラが出ていた。2026-07-06 統一）。
+ *
+ * 乱数の消費順は「シャッフル → 粒子ごとに jitterX, jitterY, z の 3 回」で固定
+ * （決定論的テストのため、呼び出し元を統合しても順序を変えない）。
+ */
+function assignShuffledTargets(
+  out: Float32Array,
+  count: number,
+  pts: number[],
+  opts: {
+    cw: number;
+    ch: number;
+    /** canvas px → ワールドの変換係数。 */
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+    /** ジッタ振幅（ワールド単位）。`(random()-0.5) * jitter` が加わる。 */
+    jitter: number;
+    thickness: number;
+    random: Random;
+  },
+): void {
+  const { cw, ch, scale, offsetX, offsetY, jitter, thickness, random } = opts;
+  const filled = pts.length / 2;
+
+  const order = new Uint32Array(filled);
+  for (let i = 0; i < filled; i++) order[i] = i;
+  for (let i = filled - 1; i > 0; i--) {
+    const j = (random() * (i + 1)) | 0;
+    const t = order[i]!;
+    order[i] = order[j]!;
+    order[j] = t;
+  }
+
+  for (let i = 0; i < count; i++) {
+    const idx = order[i % filled]!;
+    const px = pts[idx * 2]!;
+    const py = pts[idx * 2 + 1]!;
+    const wx = (px - cw / 2) * scale + offsetX;
+    const wy = -(py - ch / 2) * scale + offsetY;
+    out[i * 3] = wx + (random() - 0.5) * jitter;
+    out[i * 3 + 1] = wy + (random() - 0.5) * jitter;
+    out[i * 3 + 2] = (random() - 0.5) * thickness;
   }
 }
 
@@ -303,35 +393,17 @@ export function buildTextTargets(
   }
 
   const scale = opts.worldW / cw;
-  const thickness = opts.thickness ?? 0.18;
 
-  // buildDenseTextTargets と同じ理由でシャッフル+巡回割当に統一（旧: 連番ストライド
-  // + 乗算ハッシュだと実質ランダム選択と同じになり団子状のムラが出る。詳細は
-  // dom-overlay.ts の buildGlyphFromDOM 側コメント参照）。
-  const order = new Uint32Array(filled);
-  for (let i = 0; i < filled; i++) order[i] = i;
-  for (let i = filled - 1; i > 0; i--) {
-    const j = (random() * (i + 1)) | 0;
-    const t = order[i]!;
-    order[i] = order[j]!;
-    order[j] = t;
-  }
-
-  for (let i = 0; i < count; i++) {
-    const idx = order[i % filled]!;
-    const px = pts[idx * 2]!;
-    const py = pts[idx * 2 + 1]!;
-
-    const wx = (px - cw / 2) * scale + offsetX;
-    const wy = -(py - ch / 2) * scale + offsetY;
-    const jx = (random() - 0.5) * scale * step;
-    const jy = (random() - 0.5) * scale * step;
-
-    out[i * 3] = wx + jx;
-    out[i * 3 + 1] = wy + jy;
-    out[i * 3 + 2] = (random() - 0.5) * thickness;
-  }
-
+  assignShuffledTargets(out, count, pts, {
+    cw,
+    ch,
+    scale,
+    offsetX,
+    offsetY,
+    jitter: scale * step,
+    thickness: opts.thickness ?? 0.18,
+    random,
+  });
   return out;
 }
 
@@ -386,30 +458,135 @@ export function buildDenseTextTargets(
   }
 
   const scale = opts.worldW / cw;
-  const thickness = opts.thickness ?? 0.08;
 
-  // インデックスを一度だけシャッフル（Fisher–Yates）→ 巡回割当で均一カバレッジ。
-  const order = new Uint32Array(filled);
-  for (let i = 0; i < filled; i++) order[i] = i;
-  for (let i = filled - 1; i > 0; i--) {
-    const j = (random() * (i + 1)) | 0;
-    const t = order[i]!;
-    order[i] = order[j]!;
-    order[j] = t;
+  assignShuffledTargets(out, count, pts, {
+    cw,
+    ch,
+    scale,
+    offsetX,
+    offsetY,
+    // ジッタは塗り内に収める控えめな量（穴が開かない範囲）。
+    jitter: scale * step * 0.5,
+    thickness: opts.thickness ?? 0.08,
+    random,
+  });
+  return out;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * SVG パス群のバウンディングボックスを `getBBox()` で計測する。
+ * 非表示（`visibility:hidden`・0×0）の SVG を一時的に DOM へ差して測る
+ * （`getBBox` はレイアウト非依存のジオメトリ境界を返すが、`display:none` や
+ * 未接続ノードでは 0 を返すブラウザがあるため接続は必須）。
+ * SSR / 計測不能時は null（呼び出し側でフォールバック）。
+ */
+export function measureSvgPathBounds(
+  paths: string[],
+): [number, number, number, number] | null {
+  if (typeof document === "undefined" || !document.body) return null;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.style.cssText =
+    "position:absolute;width:0;height:0;overflow:hidden;visibility:hidden";
+  for (const d of paths) {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    svg.appendChild(p);
+  }
+  document.body.appendChild(svg);
+  try {
+    const b = svg.getBBox();
+    if (!(b.width > 0) || !(b.height > 0)) return null;
+    return [b.x, b.y, b.width, b.height];
+  } catch {
+    return null;
+  } finally {
+    svg.remove();
+  }
+}
+
+/**
+ * SVG パスデータをオフスクリーン canvas に塗り、塗りピクセルをワールド座標ターゲットへ
+ * 変換する（テキスト系と同じ「シャッフル + 巡回割当」パイプライン）。
+ *
+ * - アスペクト比は保存。`worldW` は**シェイプのバウンディングボックスのワールド幅**
+ *   （テキストの「canvas 全幅マップ」と違い、形そのものの幅。テキストは字形が canvas に
+ *   占める比率が文言依存で予測不能だが、形は境界が既知なので直接指定できる方が使いやすい）。
+ * - `viewBox` 省略時は {@link measureSvgPathBounds} で自動計測。
+ * - SSR / 不正パス / 塗り 0 は {@link fillScatterCluster} へフォールバック（真っ白防止）。
+ */
+export function buildShapeTargets(
+  count: number,
+  opts: ShapeTargetOptions,
+): Float32Array {
+  const out = new Float32Array(count * 3);
+  const random = opts.random ?? Math.random;
+  const cw = opts.cw ?? 1024;
+  const ch = opts.ch ?? 1024;
+  const offsetX = opts.offsetX ?? 0;
+  const offsetY = opts.offsetY ?? 0;
+
+  const ctx = createSamplingContext(cw, ch);
+  if (!ctx) return out;
+
+  const paths = Array.isArray(opts.path) ? opts.path : [opts.path];
+  const vb = opts.viewBox ?? measureSvgPathBounds(paths);
+  if (!vb || !(vb[2] > 0) || !(vb[3] > 0)) {
+    fillScatterCluster(out, count, offsetX, offsetY, random);
+    return out;
+  }
+  const [vbX, vbY, vbW, vbH] = vb;
+
+  // viewBox を canvas へ contain フィット（周囲 4% 余白・中央寄せ）。
+  const fit = Math.min((cw * MAX_INK_RATIO) / vbW, (ch * MAX_INK_RATIO) / vbH);
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.setTransform(
+    fit,
+    0,
+    0,
+    fit,
+    cw / 2 - (vbX + vbW / 2) * fit,
+    ch / 2 - (vbY + vbH / 2) * fit,
+  );
+  ctx.fillStyle = "#000";
+  const fillRule = opts.fillRule ?? "nonzero";
+  for (const d of paths) {
+    try {
+      ctx.fill(new Path2D(d), fillRule);
+    } catch {
+      // 不正なパスデータは無視（他のパスの塗りは活かす）。
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const step = opts.step ?? 1;
+  const pts = collectFilledPixels(ctx, cw, ch, step);
+  if (pts.length === 0) {
+    fillScatterCluster(out, count, offsetX, offsetY, random);
+    return out;
   }
 
-  // ジッタは塗り内に収める控えめな量（穴が開かない範囲）。
-  const jitter = scale * step * 0.5;
-  for (let i = 0; i < count; i++) {
-    const idx = order[i % filled]!;
-    const px = pts[idx * 2]!;
-    const py = pts[idx * 2 + 1]!;
-    const wx = (px - cw / 2) * scale + offsetX;
-    const wy = -(py - ch / 2) * scale + offsetY;
-    out[i * 3] = wx + (random() - 0.5) * jitter;
-    out[i * 3 + 1] = wy + (random() - 0.5) * jitter;
-    out[i * 3 + 2] = (random() - 0.5) * thickness;
+  // worldW は「viewBox のワールド幅」: 描画された viewBox 幅（vbW * fit px）が
+  // worldW にマップされるよう px → ワールド係数を決める。
+  // 縦長シェイプはワールド高さが maxWorldH を超えないよう比率保存で縮小する。
+  let worldW = opts.worldW;
+  const worldH = worldW * (vbH / vbW);
+  if (opts.maxWorldH !== undefined && worldH > opts.maxWorldH) {
+    worldW *= opts.maxWorldH / worldH;
   }
+  const scale = worldW / (vbW * fit);
 
+  assignShuffledTargets(out, count, pts, {
+    cw,
+    ch,
+    scale,
+    offsetX,
+    offsetY,
+    jitter: scale * step * 0.5,
+    thickness: opts.thickness ?? 0.1,
+    random,
+  });
   return out;
 }

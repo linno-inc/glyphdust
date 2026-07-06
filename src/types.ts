@@ -61,8 +61,48 @@ export interface ScatterKeyframe {
   spread?: number;
 }
 
-/** キーフレーム（テキスト or 飛散）。 */
-export type Keyframe = TextKeyframe | ScatterKeyframe;
+/**
+ * シェイプキーフレーム。SVG パスデータ（`<path d="…">` の中身）を粒子で形にする。
+ * テキスト同様、字形（＝形）として settle / form の補間対象になる
+ * （提案者: 凜さん 2026-07-06「テキストだけでなく形も表現できるようにしたい」）。
+ *
+ * ```tsx
+ * { type: "shape", path: "M12 2 L22 22 L2 22 Z" }               // 三角形
+ * { type: "shape", path: heartPathD, viewBox: [0, 0, 24, 24] }  // アイコン
+ * ```
+ *
+ * 任意の SVG は `<path>` の `d` を渡せば表現できる（複数 `<path>` は配列で）。
+ * アスペクト比は保存され、`worldW` はシェイプのバウンディングボックスの
+ * ワールド幅を意味する（テキストの「canvas 全幅」とは違い、形そのものの幅）。
+ */
+export interface ShapeKeyframe {
+  type: "shape";
+  /**
+   * SVG パスデータ（`d` 属性の文字列）。複数の `<path>` からなるアイコンは
+   * 配列で渡す（すべて塗りとして合成）。
+   */
+  path: string | string[];
+  /**
+   * パス座標系の表示範囲 `[minX, minY, width, height]`（SVG の `viewBox` と同形式）。
+   * 未指定なら実行時にパスのバウンディングボックスを自動計測する。
+   * サイズ・位置を決定的にしたいとき（アイコンの余白込みで揃えたい等）は明示する。
+   */
+  viewBox?: [number, number, number, number];
+  /**
+   * 塗りの規則。SVG の `fill-rule` と同じ。既定 `"nonzero"`。
+   * ドーナツ状の抜き（穴）があるパスで穴が塗り潰されるときは `"evenodd"` を試す。
+   */
+  fillRule?: "nonzero" | "evenodd";
+  /** シェイプ（バウンディングボックス）のワールド幅。未指定なら可視幅からの既定比率。 */
+  worldW?: number;
+  /** ワールド x オフセット（右が +）。 */
+  offsetX?: number;
+  /** ワールド y オフセット（上が +）。 */
+  offsetY?: number;
+}
+
+/** キーフレーム（テキスト / 飛散 / シェイプ）。 */
+export type Keyframe = TextKeyframe | ScatterKeyframe | ShapeKeyframe;
 
 /** 配色。 */
 export interface GlyphColors {

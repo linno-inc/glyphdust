@@ -22,6 +22,7 @@ import {
   DEFAULT_TEXT_FONT,
   buildKeyframeTargets,
   bump,
+  formsGlyph,
   isMobile,
   smooth,
 } from "./internal/geometry.js";
@@ -129,6 +130,25 @@ export interface MorphToOptions {
   offsetY?: number;
 }
 
+/** {@link GlyphTextHandle.morphToShape} のオプション。すべて任意。 */
+export interface MorphToShapeOptions {
+  /** このモーフにかける秒数。既定 {@link GlyphTextOptions.morphDuration}（1.6）。 */
+  duration?: number;
+  /**
+   * パス座標系の表示範囲 `[minX, minY, width, height]`。
+   * 未指定なら自動計測（`ShapeKeyframe.viewBox` と同じ意味論）。
+   */
+  viewBox?: [number, number, number, number];
+  /** 塗り規則。既定 `"nonzero"`。穴が塗り潰されるときは `"evenodd"`。 */
+  fillRule?: "nonzero" | "evenodd";
+  /** シェイプ（バウンディングボックス）のワールド幅。既定は画面幅から自動。 */
+  worldW?: number;
+  /** シェイプの X オフセット（ワールド単位）。 */
+  offsetX?: number;
+  /** シェイプの Y オフセット（ワールド単位）。 */
+  offsetY?: number;
+}
+
 /** {@link GlyphTextHandle.scatter} のオプション。すべて任意。 */
 export interface ScatterOptions {
   /** このモーフにかける秒数。既定 {@link GlyphTextOptions.morphDuration}（1.6）。 */
@@ -171,6 +191,16 @@ export interface GlyphTextHandle {
    * @returns 字形に定着したら `true`、後続の morph に置き換えられたか destroy されたら `false`。
    */
   morphTo(text: string, options?: MorphToOptions): Promise<boolean>;
+  /**
+   * {@link morphTo} のシェイプ版: 表示中の粒子を SVG パスデータの形へ再収束させる。
+   * `path` は `<path d="…">` の中身（複数 `<path>` は配列）。挙動（latest-wins・
+   * Promise の意味）は morphTo と同じ。形は実 DOM テキストへの解決を持たないため
+   * 粒子フィニッシュで定着する。フォールバック時は何もせず `true`。
+   */
+  morphToShape(
+    path: string | string[],
+    options?: MorphToShapeOptions,
+  ): Promise<boolean>;
   /** {@link morphTo} の対: 粒子を飛散雲へ溶かす（「話していない」状態の表現に）。 */
   scatter(options?: ScatterOptions): Promise<boolean>;
   /** すべて破棄（canvas 除去・three リソース解放・監視解除）。冪等。 */
@@ -256,6 +286,10 @@ function inertHandle(
     setProgress() {},
     morphTo(text: string) {
       if (fallbackEl) fallbackEl.textContent = text.replace(/\n/g, " ");
+      return Promise.resolve(true);
+    },
+    morphToShape() {
+      // 静的フォールバックに形は描けない（テキストのまま維持）。
       return Promise.resolve(true);
     },
     scatter() {
@@ -401,12 +435,13 @@ export function glyphText(
 
   // --- material ---
   const vertexShader = buildVertexShader(Math.max(n, 1));
-  // 各キーフレームの正規化時刻（最後が文字なら 0.85 で形成し切る）。
-  const lastIsText = keyframes[n - 1]?.type === "text";
+  // 各キーフレームの正規化時刻（最後が文字/形なら 0.85 で形成し切る）。
+  // isText は「字形（形）を形成する」の意（text/shape 両方 true）。
+  const lastIsText = formsGlyph(keyframes[n - 1]);
   const end = lastIsText ? 0.85 : 1;
   const times =
     n <= 1 ? [0] : Array.from({ length: n }, (_, i) => (i / (n - 1)) * end);
-  const isText = keyframes.map((k) => k.type === "text");
+  const isText = keyframes.map((k) => formsGlyph(k));
   const isScatter = keyframes.map((k) => k.type === "scatter");
   const firstIsText = isText[0] === true;
 
@@ -977,6 +1012,37 @@ export function glyphText(
     );
   };
 
+  const morphToShapeImpl = (
+    path: string | string[],
+    opts: MorphToShapeOptions = {},
+  ): Promise<boolean> => {
+    if (disposed) return Promise.resolve(false);
+    const { worldW: visWNow } = viewSizeAtZ0(w, h, cameraFov, cameraZ);
+    const target = buildKeyframeTargets(
+      {
+        type: "shape",
+        path,
+        ...(opts.viewBox !== undefined ? { viewBox: opts.viewBox } : {}),
+        ...(opts.fillRule !== undefined ? { fillRule: opts.fillRule } : {}),
+        ...(opts.worldW !== undefined ? { worldW: opts.worldW } : {}),
+        ...(opts.offsetX !== undefined ? { offsetX: opts.offsetX } : {}),
+        ...(opts.offsetY !== undefined ? { offsetY: opts.offsetY } : {}),
+      },
+      count,
+      {
+        visW: visWNow,
+        mobile,
+        cameraFov,
+        cameraZ,
+        scatterPattern: style.scatterPattern,
+        viewportW: w,
+        viewportH: h,
+      },
+    );
+    // 形は実 DOM テキストへ解決しない（resolveInfo なし＝粒子フィニッシュで保持）。
+    return beginStream(target, true, opts.duration ?? morphDurationDefault, null);
+  };
+
   const scatterImpl = (opts: ScatterOptions = {}): Promise<boolean> => {
     if (disposed) return Promise.resolve(false);
     const { worldW: visWNow } = viewSizeAtZ0(w, h, cameraFov, cameraZ);
@@ -1065,6 +1131,9 @@ export function glyphText(
     },
     morphTo(text: string, opts?: MorphToOptions) {
       return morphToImpl(text, opts);
+    },
+    morphToShape(path: string | string[], opts?: MorphToShapeOptions) {
+      return morphToShapeImpl(path, opts);
     },
     scatter(opts?: ScatterOptions) {
       return scatterImpl(opts);

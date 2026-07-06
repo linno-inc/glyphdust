@@ -1,14 +1,16 @@
 # glyphdust
 
 > Scroll/agent-driven **text → particles → glyph → real-text resolve** for the web (WebGL/three.js).
-> You animate everything from a single progress `0 → 1`. Two entry points: a **React-free one call
-> `glyphText()`**, or a **`<GlyphDust>`** react-three-fiber component. MIT. npm package: `glyphdust`.
+> Also forms particles into any **SVG path shape** (icons, logos, symbols) via shape keyframes /
+> `morphToShape()`. You animate everything from a single progress `0 → 1`. Two entry points: a
+> **React-free one call `glyphText()`**, or a **`<GlyphDust>`** react-three-fiber component.
+> MIT. npm package: `glyphdust`.
 
 Designed for AI agents / codegen: minimal required config, safe defaults, and one `progress 0→1`
 you can drive from anything — scroll, a timer, an AI agent, audio, sensor data. Copy an example
 below and change the text; it works as-is.
 
-Current version: 0.8.6.
+Current version: 0.9.0.
 
 ## Install
 
@@ -17,8 +19,8 @@ Current version: 0.8.6.
   (`three`, `@react-three/fiber`, `react`, `react-dom` are peerDependencies.)
 - **CDN, zero install (vanilla only)**: one script tag exposes a global `glyphdust` with
   `three` bundled in — no `npm install`, no bundler:
-  `<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.8.6"></script>`
-  Pin a version (`@0.8.6`) in production.
+  `<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.9.0"></script>`
+  Pin a version (`@0.9.0`) in production.
 
 ## `glyphText(target, text, options?) → handle`  (React-free, one call)
 
@@ -27,7 +29,8 @@ Creates a `<canvas>` inside `target`, boots three.js, and animates particles int
 - `target`: CSS selector or `HTMLElement`. The canvas fills it — give the box a size.
 - `text`: word/phrase; `\n` = line break. Drives the auto sequence + the reduced-motion fallback.
 - returns a **handle**: `{ canvas, play(), pause(), restart(), setProgress(p /*0..1*/),
-  morphTo(text, opts?) → Promise<boolean>, scatter(opts?) → Promise<boolean>, destroy() }`.
+  morphTo(text, opts?) → Promise<boolean>, morphToShape(path, opts?) → Promise<boolean>,
+  scatter(opts?) → Promise<boolean>, destroy() }`.
 
 Minimal — autoplays (scatter → text, then holds), needs only `three`:
 ```js
@@ -38,7 +41,7 @@ glyphText("#hero", "LINNO");
 Zero-install via CDN:
 ```html
 <div id="hero" style="width:100vw;height:100vh"></div>
-<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.8.6"></script>
+<script src="https://cdn.jsdelivr.net/npm/glyphdust@0.9.0"></script>
 <script>glyphdust.glyphText("#hero", "LINNO")</script>
 ```
 
@@ -69,6 +72,15 @@ h.morphTo("こん"); h.morphTo("こんにち"); h.morphTo("こんにちは");
 - Per-call opts: `{ duration, resolve, font, dense, worldW, offsetX, offsetY }`.
 - Long text auto-shrinks to fit; multi-line (`\n`) keeps the particle finish (no DOM resolve).
 - Reduced-motion / no-WebGL: `morphTo` updates the static fallback text (stays accessible).
+- **Shapes**: `morphToShape(path, opts?)` re-converges the particles into any **SVG path**
+  (`path` = the `d` attribute string; array for multi-`<path>` icons). Same latest-wins
+  semantics; finishes as particles (no DOM text resolve).
+  Opts: `{ duration, viewBox, fillRule, worldW, offsetX, offsetY }`.
+  ```js
+  await h.morphTo("I");
+  await h.morphToShape("M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 …"); // a heart ♥
+  await h.morphTo("YOU");
+  ```
 
 ### Drive progress yourself — scroll / agent / timeline  (`autoplay:false` + `setProgress`)
 ```js
@@ -131,8 +143,15 @@ real text. Do NOT drive those elements' opacity yourself — the library owns it
 ## Keyframe types
 - `{ type: "text", text, dense?, domSelector?, resolveToDom?, font?, segments?, worldW?, offsetX?, offsetY? }`
 - `{ type: "scatter", spread? }`
+- `{ type: "shape", path, viewBox?, fillRule?, worldW?, offsetX?, offsetY? }` — form particles
+  into any **SVG path** (icon/logo/symbol). `path` = the `d` attribute (`string | string[]`,
+  array = multi-`<path>` icon, all filled together). `viewBox` `[x,y,w,h]` optional
+  (auto-measured); `fillRule` `"nonzero"|"evenodd"` (try `"evenodd"` if a hole gets filled);
+  `worldW` = world width of the shape's bounding box (aspect preserved; tall shapes
+  auto-shrink to stay visible when omitted). Works in both `keyframes` arrays and streaming
+  (`morphToShape`). Shapes settle/hold like text glyphs but never resolve to DOM text.
 
-Progress `0→1` auto-distributes across keyframes; a final text keyframe forms by ~0.85 and holds.
+Progress `0→1` auto-distributes across keyframes; a final text/shape keyframe forms by ~0.85 and holds.
 
 ## Gotchas
 - **three.js is required** — peer dependency for the npm builds; bundled into the CDN build.

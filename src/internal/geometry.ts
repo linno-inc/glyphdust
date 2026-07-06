@@ -11,10 +11,21 @@ import * as THREE from "three";
 import {
   buildTextTargets,
   buildDenseTextTargets,
+  buildShapeTargets,
   type Random,
 } from "../sampling.js";
 import { buildGlyphFromDOM } from "../dom-overlay.js";
 import type { Keyframe } from "../types.js";
+
+/**
+ * 「字形（形）を形成する」キーフレームか。text と shape が該当する。
+ * settle / form / 終端保持（0.85 で形成し切る）の判定は「text かどうか」ではなく
+ * この述語で行う（shape も収束して形を保持する点でテキストと同じ意味論のため）。
+ * resolveToDom / domSelector 系の「実 DOM テキストへの解決」は text 限定のまま。
+ */
+export function formsGlyph(kf: Keyframe | undefined): boolean {
+  return kf?.type === "text" || kf?.type === "shape";
+}
 
 export const DEFAULT_TEXT_FONT =
   "700 140px system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif";
@@ -110,6 +121,30 @@ export function buildKeyframeTargets(
 ): Float32Array {
   if (kf.type === "scatter") {
     return buildScatter(count, kf.spread ?? 1, Math.random, ctx.scatterPattern);
+  }
+
+  if (kf.type === "shape") {
+    // 可視ワールド高さ（アスペクトは canvas 実寸 > window の順で推定）。
+    const vpW =
+      ctx.viewportW ??
+      (typeof window !== "undefined" ? window.innerWidth : 1440);
+    const vpH =
+      ctx.viewportH ??
+      (typeof window !== "undefined" ? window.innerHeight : 900);
+    const visH = ctx.visW * (vpH / Math.max(vpW, 1));
+    return buildShapeTargets(count, {
+      path: kf.path,
+      viewBox: kf.viewBox,
+      ...(kf.fillRule !== undefined ? { fillRule: kf.fillRule } : {}),
+      // 既定はテキストより控えめな幅（形は正方形に近いことが多く、テキストの
+      // 0.7 相当だと縦に画面をはみ出しやすい）。
+      worldW: kf.worldW ?? ctx.visW * (ctx.mobile ? 0.5 : 0.32),
+      // worldW 未指定（自動サイズ）のときだけ、縦長シェイプが可視高さを
+      // はみ出さないよう高さもキャップする（明示指定はユーザーの意図を尊重）。
+      ...(kf.worldW === undefined ? { maxWorldH: visH * 0.62 } : {}),
+      offsetX: kf.offsetX ?? 0,
+      offsetY: kf.offsetY ?? 0,
+    });
   }
 
   const lines = kf.text.split("\n");

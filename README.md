@@ -198,7 +198,7 @@ handle.destroy();    // remove the canvas, free GPU resources, disconnect observ
 
 - **`target`** — a CSS selector or an `HTMLElement`. The canvas fills it (so give the box a size).
 - **`text`** — the word/phrase. `\n` for line breaks.
-- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), morphTo(text), scatter(), destroy() }`.
+- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), morphTo(text), morphToShape(path), scatter(), destroy() }`.
 
 By default it scatters particles, then forms the text and holds (the last text keyframe
 settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
@@ -247,6 +247,14 @@ h.morphTo("こん"); h.morphTo("こんにち"); h.morphTo("こんにちは");
 - The returned promise resolves `true` when the word has settled, `false` if it was
   superseded by a newer `morphTo` (or the handle was destroyed).
 - Per-call options: `{ duration, resolve, font, dense, worldW, offsetX, offsetY }`.
+- **Shapes too**: `morphToShape(path)` re-converges the particles into any SVG path —
+  same latest-wins semantics. `path` is the `d` attribute string (array for multi-path
+  icons); options: `{ duration, viewBox, fillRule, worldW, offsetX, offsetY }`.
+  ```js
+  await h.morphTo("I");
+  await h.morphToShape("M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 …"); // ♥
+  await h.morphTo("YOU");
+  ```
 - Long text auto-fits (the glyph shrinks to stay fully visible). Multi-line text keeps the
   particle finish (no DOM resolve).
 - Under reduced-motion / no-WebGL, `morphTo` updates the static fallback text, so agent
@@ -300,7 +308,7 @@ target shows plain centered text instead of a blank box.
 ### Keyframes
 
 ```ts
-type Keyframe = TextKeyframe | ScatterKeyframe;
+type Keyframe = TextKeyframe | ScatterKeyframe | ShapeKeyframe;
 ```
 
 **`TextKeyframe`** (`type: "text"`) — turns text into a particle glyph:
@@ -342,6 +350,30 @@ governed globally by `colors` (ink/accent ratio), not per segment.
 | field | type | description |
 |---|---|---|
 | `spread` | `number?` | Scatter-radius multiplier. Default `1`. |
+
+**`ShapeKeyframe`** (`type: "shape"`) — forms particles into any **SVG path** (icons,
+logos, symbols — anything you can express as a `<path d="…">`):
+
+```tsx
+<GlyphDust
+  keyframes={[
+    { type: "text", text: "LOVE" },
+    { type: "scatter", spread: 1 },
+    { type: "shape", path: "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 …" }, // a heart
+  ]}
+/>
+```
+
+| field | type | description |
+|---|---|---|
+| `path` | `string \| string[]` | SVG path data (the `d` attribute). Multi-`<path>` icons: pass an array — all are filled together. |
+| `viewBox` | `[x, y, w, h]?` | Path coordinate range (same as SVG `viewBox`). Auto-measured when omitted; set it to keep an icon's built-in padding or make sizing deterministic. |
+| `fillRule` | `"nonzero" \| "evenodd"?` | Fill rule. If a hole (e.g. a donut) gets filled in, try `"evenodd"`. |
+| `worldW` | `number?` | World width of the **shape's bounding box** (aspect ratio is preserved; tall shapes auto-shrink to stay on screen when this is omitted). |
+| `offsetX` / `offsetY` | `number?` | World-space offset (right / up are positive). |
+
+Shapes behave like text glyphs in the timeline (they settle, hold at `0.85`, and get the
+same crisp formation) — they just don't resolve to DOM text.
 
 ### Drivers
 
@@ -385,7 +417,7 @@ style: {
 
 ### Low-level helpers
 
-For custom rigs, the building blocks are exported too: `buildTextTargets`, `buildDenseTextTargets`, `buildVertexShader`, `FRAGMENT_SHADER`, `createScrollProgress`, `useScrollProgress`, `computeAutoplayProgress`, `useReducedMotion`, `prefersReducedMotion`, `viewSizeAtZ0`, `buildGlyphFromDOM`, `computeScreenRect`.
+For custom rigs, the building blocks are exported too: `buildTextTargets`, `buildDenseTextTargets`, `buildShapeTargets`, `measureSvgPathBounds`, `buildVertexShader`, `FRAGMENT_SHADER`, `createScrollProgress`, `useScrollProgress`, `computeAutoplayProgress`, `useReducedMotion`, `prefersReducedMotion`, `viewSizeAtZ0`, `buildGlyphFromDOM`, `computeScreenRect`.
 
 ---
 

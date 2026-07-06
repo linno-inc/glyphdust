@@ -25,6 +25,7 @@ import {
   DEFAULT_DENSE_FONT,
   buildKeyframeTargets,
   bump,
+  formsGlyph,
   isMobile,
   smooth,
 } from "./internal/geometry.js";
@@ -137,7 +138,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
   const n = keyframes.length;
 
   // 各キーフレームの正規化時刻（補間境界）。
-  // 既定: 最終キーフレームが text の場合は 0.85 で形成し切り、0.85→1.0 を「くっきり保持」区間にする
+  // 既定: 最終キーフレームが text/shape の場合は 0.85 で形成し切り、0.85→1.0 を「くっきり保持」区間にする
   //（最後の瞬間まで雲のままにせず、字形を読ませる／フィナーレ解決へ綺麗に受け渡すため）。
   const times = useMemo<number[]>(() => {
     if (timing && timing.length === n) {
@@ -157,14 +158,14 @@ export function GlyphPoints(props: GlyphPointsProps) {
       return timing.slice();
     }
     if (n <= 1) return [0];
-    const lastIsText = keyframes[n - 1]?.type === "text";
-    const end = lastIsText ? 0.85 : 1;
+    const end = formsGlyph(keyframes[n - 1]) ? 0.85 : 1;
     return Array.from({ length: n }, (_, i) => (i / (n - 1)) * end);
   }, [timing, n, keyframes]);
 
-  // タイムライン上の意味論（どこが text / scatter か、解決の有無）。
+  // タイムライン上の意味論（どこが字形形成 / scatter か、解決の有無）。
+  // isText は「字形（形）を形成する」の意（text/shape 両方 true）。
   const timeline = useMemo(() => {
-    const isText = keyframes.map((k) => k.type === "text");
+    const isText = keyframes.map((k) => formsGlyph(k));
     const isScatter = keyframes.map((k) => k.type === "scatter");
     const last = keyframes[n - 1];
     const hasResolve =
@@ -475,13 +476,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
       if (timeline.isScatter[i]) burst = Math.max(burst, b);
     }
 
-    // form: 最終キーフレームが text のとき、その最終遷移の進捗。
+    // form: 最終キーフレームが text/shape のとき、その最終遷移の進捗。
     let form = 0;
     const lastIsText = timeline.isText[n - 1] === true;
     if (lastIsText && n >= 2) {
       form = smooth(times[n - 2] ?? 0, times[n - 1] ?? 1, s);
     }
-    // 先頭キーフレームが text のとき: 冒頭は「字形が締まった」状態から始め、
+    // 先頭キーフレームが text/shape のとき: 冒頭は「字形が締まった」状態から始め、
     // 最初の遷移で解けていく。これがないと「実文字が消えてから粒子が湧く」空白が出る。
     const firstIsText = timeline.isText[0] === true;
     if (firstIsText && n >= 2) {

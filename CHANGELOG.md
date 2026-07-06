@@ -4,6 +4,35 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-07-06
+
+### Added
+
+- **シェイプ（SVG パス）対応。** テキストだけでなく、任意の形を粒子で表現できる
+  （提案者: 凜さん 2026-07-06「テキストだけでなく形も表現できるようにしたい」）。
+  - **`ShapeKeyframe`（`type: "shape"`）**: `keyframes` 配列に
+    `{ type: "shape", path: "M…" }` を混ぜられる。`path` は SVG `<path>` の
+    `d` 属性そのまま（複数 `<path>` のアイコンは配列）。`viewBox` 省略時は
+    バウンディングボックスを自動計測（`getBBox`）。`fillRule`
+    （`"nonzero"`/`"evenodd"`）、`worldW`（形そのもののワールド幅・アスペクト比
+    保存）、`offsetX/Y` に対応。タイムライン上は text と同じ「字形形成」の意味論
+    （settle / 0.85 で形成し切って保持）で扱う。実 DOM テキストへの解決
+    （`resolveToDom`）は形には無い。
+  - **`GlyphTextHandle.morphToShape(path, opts?)`**: ストリーミング API の
+    シェイプ版。表示中の粒子をその場から任意の SVG パスの形へ再収束させる
+    （latest-wins・Promise の意味は `morphTo` と同じ）。
+  - **`buildShapeTargets` / `measureSvgPathBounds`** を低レベルヘルパーとして公開。
+  - 既定サイズは可視幅の 32%（モバイル 50%）で、`worldW` 未指定の縦長シェイプは
+    可視高さに収まるよう自動縮小する（稲妻アイコンで画面をはみ出した実測に基づく）。
+  - 実装はテキストと同じ「オフスクリーン Canvas 描画 → 塗りピクセル収集 →
+    シャッフル+巡回割当」パイプライン（`Path2D` で塗るだけ）。3 系統の割当コードを
+    `assignShuffledTargets` に共通化した（挙動・乱数消費順は不変）。
+
+### Fixed
+
+- `index.ts` / `cdn.ts` の `VERSION` 定数が 0.8.6 のまま package.json と
+  ズレていたのを修正（今回から 0.9.0 で一致）。
+
 ## [0.8.9] — 2026-07-06
 
 ### Added

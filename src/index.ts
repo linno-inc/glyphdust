@@ -6,15 +6,18 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.8.6";
+export const VERSION = "0.9.0";
 
-// 文字 → 粒子ターゲット生成（Task-002）
+// 文字・シェイプ → 粒子ターゲット生成（Task-002）
 export {
   buildTextTargets,
   buildDenseTextTargets,
+  buildShapeTargets,
+  measureSvgPathBounds,
   type Random,
   type TextTargetOptions,
   type DenseTextTargetOptions,
+  type ShapeTargetOptions,
 } from "./sampling.js";
 
 // GLSL シェーダ（Task-003）
@@ -62,6 +65,7 @@ export {
   type GlyphTextOptions,
   type GlyphTextHandle,
   type MorphToOptions,
+  type MorphToShapeOptions,
   type ScatterOptions,
 } from "./vanilla.js";
 
@@ -71,6 +75,7 @@ export type {
   TextKeyframe,
   TextSegment,
   ScatterKeyframe,
+  ShapeKeyframe,
   GlyphColors,
   GlyphStyle,
   GlyphPreset,

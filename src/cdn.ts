@@ -17,8 +17,9 @@ export {
   type GlyphTextOptions,
   type GlyphTextHandle,
   type MorphToOptions,
+  type MorphToShapeOptions,
   type ScatterOptions,
 } from "./vanilla.js";
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.8.6";
+export const VERSION = "0.9.0";
