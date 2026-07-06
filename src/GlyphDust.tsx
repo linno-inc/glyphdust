@@ -64,6 +64,7 @@ export function GlyphDust(props: GlyphDustProps) {
     timing,
     fallback = null,
     className,
+    resampleSignal,
   } = props;
 
   const reduced = useReducedMotion();
@@ -221,6 +222,7 @@ export function GlyphDust(props: GlyphDustProps) {
           timing={timing}
           resolveRef={useOwnOverlay ? resolveRef : undefined}
           resolveDomSelector={resolveDomSelector}
+          resampleSignal={resampleSignal}
         />
       </Canvas>
       {useOwnOverlay ? (

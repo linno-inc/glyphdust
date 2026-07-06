@@ -4,6 +4,25 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.9] — 2026-07-06
+
+### Added
+
+- **`resampleSignal` prop（`GlyphDustProps`）を追加。** 値が変化するたびに
+  Canvas/WebGLコンテキストを維持したまま domSelector サンプリング
+  （`buildGlyphFromDOM`）を再実行する。domSelector サンプリングは従来
+  マウント時（＋resize/font-load）にしか走らず、sticky でなく普通に
+  スクロールする要素（例: 縦長の段落）を対象にすると、マウント直後に
+  サンプリングした座標が以後のスクロールで更新されず、実際の要素位置との
+  ズレが蓄積していく問題があった（凜さん 2026-07-06「粒子が正しい位置に
+  収束しない」指摘の調査）。呼び出し側がスクロール位置に応じてこの値を
+  定期的に変えることで、ズレの最大幅を抑えられる。
+  ※ この機能自体は実測で正しく動作することを確認済みだが、単独では
+  「粒子が正しい位置に収束しない」問題の全ては解決していない
+  （調査の詳細は LINNO corporate site の `GlyphManifesto.tsx` コメント参照。
+  根本原因はシェーダーの位置/アルファ計算パイプライン側にある可能性が高く、
+  引き続き調査中）。
+
 ## [0.8.8] — 2026-07-06
 
 ### Fixed

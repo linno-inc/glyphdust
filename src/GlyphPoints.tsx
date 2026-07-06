@@ -96,6 +96,12 @@ export interface GlyphPointsProps {
    * その実要素の不透明度を直接フェードする（整列が原理保証される）。
    */
   resolveDomSelector?: string | undefined;
+  /**
+   * この値が変化するたびに Canvas/WebGLコンテキストを維持したまま
+   * domSelector サンプリングを再実行する（{@link GlyphDustProps.resampleSignal}
+   * 参照）。
+   */
+  resampleSignal?: number | undefined;
 }
 
 export function GlyphPoints(props: GlyphPointsProps) {
@@ -110,6 +116,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     timing,
     resolveRef,
     resolveDomSelector,
+    resampleSignal,
   } = props;
 
   const pointsRef = useRef<THREE.Points>(null);
@@ -399,6 +406,21 @@ export function GlyphPoints(props: GlyphPointsProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [built]);
+
+  // resampleSignal 変化時: マウント直後の初回サンプリングと同じ rebuildDomGlyphs
+  // を、Canvas/WebGLコンテキストは維持したまま再実行する（呼び出し側コメント
+  // 参照）。初回マウント時（built 変化時の上の effect）と重複実行しても
+  // rebuildDomGlyphs は冪等（現在の DOM 位置を読み直すだけ）なので副作用はない。
+  const isFirstResample = useRef(true);
+  useEffect(() => {
+    if (isFirstResample.current) {
+      // 初回マウントは上の [built] effect が既に処理するため二重実行を避ける。
+      isFirstResample.current = false;
+      return;
+    }
+    rebuildDomGlyphs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resampleSignal]);
 
   // 解像度に応じた点サイズ。マテリアル側 uniforms（クローン）を更新する。
   useEffect(() => {
