@@ -4,6 +4,24 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.8] — 2026-07-06
+
+### Fixed
+
+- **DOM見出しサンプリング（`buildGlyphFromDOM`）と通常密度テキスト
+  （`buildTextTargets`）の粒子配置が「団子状」にムラ立って見える問題を修正。**
+  両関数とも「連番ストライド + 塗りピクセル全域への乗算ハッシュ散らし」で
+  ピクセルを選んでいたが、ハッシュの振れ幅がストライドの均等性を丸ごと
+  打ち消してしまい、実質ただのランダム選択と同じになっていた。ランダム選択は
+  同じピクセルに複数の粒子が重なる一方で選ばれないピクセルも生まれる
+  （くじ引きの偏り）ため、文字の輪郭が均一な砂目ではなく粗密のムラとして
+  見えていた（発見: 凜さん 2026-07-06「収束・拡散のテキストの粒子がボコボコ
+  ダンゴみたいでスマート感がない」）。`buildDenseTextTargets`
+  （高密度ワードマーク用）は既に「シャッフル+巡回割当」方式で同じ問題を
+  解決済みだったため、同じ方式に統一。各塗りピクセルに
+  floor/ceil(count/filled) 個がほぼ均等に乗るようになり、粗密ムラ・穴が
+  大幅に減る。
+
 ## [0.8.7] — 2026-07-05
 
 ### Fixed

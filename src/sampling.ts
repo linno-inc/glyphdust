@@ -17,12 +17,6 @@ import type { TextSegment } from "./types.js";
 /** alpha がこの値を超えるピクセルを「塗り」とみなす。 */
 const ALPHA_THRESHOLD = 128;
 
-/**
- * Knuth の乗算ハッシュ定数（2^32 / 黄金比）。
- * 連番 i を擬似ランダムに散らし、塗りピクセルへ均しく割り当てるために使う。
- */
-const HASH_MULTIPLIER = 2654435761;
-
 /** 0..1 を返す乱数生成器。テスト時に決定論的な関数を注入できる。 */
 export type Random = () => number;
 
@@ -253,8 +247,10 @@ function drawSegmentedLines(
 /**
  * テキスト行をオフスクリーン canvas に描画し、塗りピクセルをワールド座標ターゲットへ変換する。
  *
- * 割り当ては「連番ベース + 乗算ハッシュ散らし」で、塗りピクセルを均しく巡回カバーする。
- * 塗りが 0 のときは {@link fillScatterCluster} へフォールバック。
+ * 割り当ては {@link buildDenseTextTargets} と同じ「シャッフル + 巡回割当」方式
+ * （2026-07-06 統一。旧・連番ストライド+乗算ハッシュ方式はハッシュの振れ幅が
+ * ストライドの均等性を打ち消し実質ランダム選択と同じになり、団子状のムラが
+ * 出ていた）。塗りが 0 のときは {@link fillScatterCluster} へフォールバック。
  *
  * @param count 粒子数（戻り値は `count * 3` の Float32Array）
  * @param lines 描画する行（文言は呼び出し側が決める。本関数は文言非依存）
@@ -309,10 +305,20 @@ export function buildTextTargets(
   const scale = opts.worldW / cw;
   const thickness = opts.thickness ?? 0.18;
 
+  // buildDenseTextTargets と同じ理由でシャッフル+巡回割当に統一（旧: 連番ストライド
+  // + 乗算ハッシュだと実質ランダム選択と同じになり団子状のムラが出る。詳細は
+  // dom-overlay.ts の buildGlyphFromDOM 側コメント参照）。
+  const order = new Uint32Array(filled);
+  for (let i = 0; i < filled; i++) order[i] = i;
+  for (let i = filled - 1; i > 0; i--) {
+    const j = (random() * (i + 1)) | 0;
+    const t = order[i]!;
+    order[i] = order[j]!;
+    order[j] = t;
+  }
+
   for (let i = 0; i < count; i++) {
-    const idx =
-      (Math.floor((i / count) * filled) + ((i * HASH_MULTIPLIER) % filled)) %
-      filled;
+    const idx = order[i % filled]!;
     const px = pts[idx * 2]!;
     const py = pts[idx * 2 + 1]!;
 

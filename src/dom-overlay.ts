@@ -198,10 +198,28 @@ export function buildGlyphFromDOM(
   const pxToWorld = worldW / vpW; // = worldH / vpH（等方）
   const thickness = opts.thickness ?? 0.14;
 
+  // インデックスを一度だけ Fisher–Yates シャッフル → 巡回割当で均一カバレッジ。
+  // 旧実装（連番ストライド + 乗算ハッシュを filled の全域に適用）は、ハッシュの
+  // 振れ幅がストライドの均等性を丸ごと打ち消してしまい、実質ただのランダム
+  // 選択と同じになっていた。ランダム選択は「くじ引きの偏り」で同じピクセルに
+  // 複数の粒子が重なる一方、選ばれないピクセルも生まれ、文字が均一な砂目でなく
+  // 「団子状」にムラ立って見える原因になっていた（凜さん 2026-07-06
+  // 「収束・拡散のテキストの粒子がボコボコダンゴみたいでスマート感がない」）。
+  // buildDenseTextTargets（非DOM高密度サンプリング）が既に同じ問題を
+  // シャッフル+巡回割当で解決済みだったため、同じ方式をDOMサンプリングにも
+  // 移植する: 各塗りピクセルに floor/ceil(count/filled) 個がほぼ均等に乗る。
+  const order = new Uint32Array(filled);
+  for (let i = 0; i < filled; i++) order[i] = i;
+  for (let i = filled - 1; i > 0; i--) {
+    const j = (random() * (i + 1)) | 0;
+    const t = order[i]!;
+    order[i] = order[j]!;
+    order[j] = t;
+  }
+
   const out = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    const idx =
-      (Math.floor((i / count) * filled) + ((i * 2654435761) % filled)) % filled;
+    const idx = order[i % filled]!;
     const cx = pts[idx * 2]! / res; // canvas → CSS px（コンテンツ原点）
     const cy = pts[idx * 2 + 1]! / res;
 
