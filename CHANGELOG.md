@@ -4,6 +4,26 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.4] — 2026-07-07
+
+### Fixed
+
+- **スクロールで動く `domSelector` ターゲットに粒子が毎フレーム追従するように
+  なった（二重像の解消）。** `buildGlyphFromDOM` のサンプルは「その瞬間の要素
+  位置」を座標に焼き込むため、対象が sticky でなく普通にスクロールで流れる
+  要素だと、収束アニメーション中に位置がどんどん古くなり「粒子は昔の位置へ
+  集まり、実テキストは今の位置に出る」上下ズレの二重像になっていた
+  （発見: 凜さん 2026-07-07「収束がおかしい」。実ブラウザ録画のコマ分解で
+  二重像を確認）。`resampleSignal` による離散的な再サンプリングではバケット
+  境界でターゲットが数百 px 飛ぶため根本解決にならなかった。
+  形の再サンプリング（重い）は初回・明示的シグナル時だけに留め、毎フレームは
+  「サンプリング時点からの `window.scrollY` 差分」だけ points 全体を平行移動
+  する（DOM 読み取りゼロ＝レイアウト強制なし。初版で試した毎フレーム
+  `getBoundingClientRect` は Lenis 等のスクロール書き込みと交互になると
+  forced synchronous layout で数秒級のジャンクを起こした）。sticky / fixed
+  祖先を持つターゲット（ヒーロー構成）は画面位置がスクロールに追従しないため、
+  サンプリング時に一度だけ判定して追跡を無効化する。API 変更なし。
+
 ## [0.9.3] — 2026-07-07
 
 ### Fixed

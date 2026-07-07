@@ -6,7 +6,7 @@
  */
 
 /** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.9.3";
+export const VERSION = "0.9.4";
 
 // 文字・シェイプ → 粒子ターゲット生成（Task-002）
 export {

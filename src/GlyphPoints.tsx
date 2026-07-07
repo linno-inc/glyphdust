@@ -336,6 +336,60 @@ export function GlyphPoints(props: GlyphPointsProps) {
     [vertexShader],
   );
 
+  // --- 動く DOM ターゲットの毎フレーム追跡（2026-07-07 追加） ---
+  // buildGlyphFromDOM のサンプルは「その瞬間の要素位置」を座標に焼き込むため、
+  // 対象が sticky でなく普通にスクロールで流れる要素だと、収束アニメーション中に
+  // 位置がどんどん古くなり「粒子は昔の位置へ集まり、実テキストは今の位置に出る」
+  // 二重像になる（凜さん 2026-07-07「収束がおかしい」。実ブラウザ録画のコマ分解で
+  // 上下にズレた二重像を確認）。resampleSignal による離散的な再サンプリングでは
+  // バケット境界でターゲットが数百 px 飛ぶため根本解決にならない。
+  // 対策: 形の再サンプリング（オフスクリーン描画＋getImageData、重い）は初回だけに
+  // 留め、毎フレームは「サンプリング時点からのスクロール差分」だけ points 全体を
+  // 平行移動する。差分は window.scrollY の引き算のみ＝DOM 読み取りゼロで、
+  // 毎フレーム走ってもレイアウト強制（forced synchronous layout）を起こさない。
+  // sticky な対象（ヒーロー見出し等）はスクロールしても画面位置が変わらないため
+  // このオフセットを適用してはならない — rebase 時に「対象が sticky 配置か」を
+  // 一度だけ判定し、sticky なら追跡を無効化する。再サンプリングが走った時は
+  // 基準も取り直すので二重適用にはならない（サンプルが現在位置を焼き込む＝
+  // オフセット 0 から再スタート）。
+  const trackingActiveRef = useRef(false);
+  const trackBaseScrollYRef = useRef(0);
+
+  // 追跡の基準を取り直す（サンプリング直後に呼ぶ）。points の平行移動もリセット。
+  const rebaseTracking = () => {
+    trackingActiveRef.current = false;
+    // 最後の domSelector 付きキーフレーム＝収束先を基準要素にする。
+    for (let i = n - 1; i >= 0; i--) {
+      const kf = keyframes[i];
+      if (kf?.type === "text" && kf.domSelector) {
+        const el = document.querySelector<HTMLElement>(kf.domSelector);
+        if (el) {
+          // sticky 祖先を持つ対象は画面位置がスクロールに追従しない（ヒーロー
+          // 構成）。その場合オフセットはむしろ位置を壊すので追跡しない。
+          let sticky = false;
+          for (
+            let node: HTMLElement | null = el;
+            node;
+            node = node.parentElement
+          ) {
+            const pos = getComputedStyle(node).position;
+            if (pos === "sticky" || pos === "fixed") {
+              sticky = true;
+              break;
+            }
+          }
+          if (!sticky) {
+            trackingActiveRef.current = true;
+            trackBaseScrollYRef.current = window.scrollY;
+          }
+        }
+        break;
+      }
+    }
+    const p = pointsRef.current;
+    if (p) p.position.y = 0;
+  };
+
   // resolveToDom: 実文字オーバーレイを粒子グリフにピクセル整列させる。
   // アルゴリズムは vanilla.ts の同種の解決処理と共通化されている（{@link alignGlyphOverlay}）。
   const positionOverlay = () => {
@@ -387,6 +441,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       attr.needsUpdate = true;
     });
     positionOverlay();
+    // 新しいサンプルは現在の DOM 位置を焼き込んでいるため、追跡の基準もここで
+    // 取り直す（rebaseTracking のコメント参照）。
+    rebaseTracking();
   };
 
   useEffect(() => {
@@ -457,6 +514,22 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const mat = matRef.current;
     if (!p || !mat) return;
     const u = mat.uniforms as unknown as GlyphUniforms;
+
+    // 動く DOM ターゲットの追跡: サンプリング時点からのスクロール差分だけ
+    // points 全体を平行移動する（trackingActiveRef 宣言部のコメント参照）。
+    // window.scrollY の読み取りのみ＝DOM 読み取りゼロで毎フレーム安全。
+    if (trackingActiveRef.current) {
+      const dyPx = window.scrollY - trackBaseScrollYRef.current;
+      // 画面 px → ワールドの換算（z=0 平面では縦横同スケール）。
+      const w = sizeRef.current.width || 1;
+      const { worldW: visWNow } = viewSizeAtZ0(
+        w,
+        sizeRef.current.height || 1,
+        cameraFov,
+        cameraZ,
+      );
+      p.position.y = dyPx * (visWNow / w);
+    }
 
     const raw = THREE.MathUtils.clamp(getProgress(), 0, 1);
     // スクロール進捗を直接ステージに反映（lerp 追従は間延びの原因になる）。
