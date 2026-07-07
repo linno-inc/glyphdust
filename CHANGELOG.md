@@ -4,6 +4,25 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.3] — 2026-07-07
+
+### Fixed
+
+- **`paused: true → false` の立ち下がりで r3f の描画ループが再開しないことがある
+  不具合を修正。** r3f の内部ループは「何も invalidate しなければ
+  requestAnimationFrame を止める」省電力設計になっており、`<Canvas frameloop>`
+  prop を `"never"` → `"always"` に変えるだけでは内部状態が更新されるだけで
+  ループそのものは再始動しない。r3f 自身の `invalidate()` を明示的に呼んで
+  初めて再始動する（かつ `invalidate()` 自体 `frameloop==="never"` の間は
+  no-op なので、呼ぶタイミングも重要）。これを怠ると、一度停止した描画ループが
+  二度と再開せず、`resolveToDom` の opacity 書き込み（useFrame 内で行われる）
+  も含めて永久に凍結する不具合があった（発見: 凜さん 2026-07-07「全然ダメ」
+  指摘の調査。0.9.2 で `paused` を初めて実運用に投入した際、一部要素が
+  永久に opacity 0 のまま固まる退行を引き起こした）。
+  `<GlyphDust>` 内部に `paused` の立ち下がりを監視し `invalidate()` を挟む
+  ヘルパーを追加し、この経路を修正した。`paused` prop 自体の型・既定値は
+  変更なし。
+
 ## [0.9.2] — 2026-07-07
 
 ### Added

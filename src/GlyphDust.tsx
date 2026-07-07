@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { GlyphPoints, type ResolvedColors, type ResolvedStyle } from "./GlyphPoints.js";
@@ -35,6 +35,32 @@ const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+/**
+ * `paused: true → false` の立ち下がりで r3f の描画ループを明示的に再始動する。
+ *
+ * なぜ必要か: r3f の内部ループは「何も invalidate しなければ requestAnimationFrame
+ * を止める」省電力設計になっている（`frameloop="never"` の間は当然ずっと止まった
+ * まま）。`<Canvas frameloop>` prop を `"never"` → `"always"` に変えると内部の
+ * `state.frameloop` は更新されるが、それだけではループそのものは再始動しない —
+ * r3f の `invalidate()` が明示的に `requestAnimationFrame(loop)` を呼んで初めて
+ * 再始動する（かつ `invalidate()` 自身は `state.frameloop === "never"` の間は
+ * 何もしない no-op なので、`setFrameloop` が先に効いた**後**に呼ぶ必要がある）。
+ * これを怠ると、一度停止した描画ループが二度と再開せず、`resolveToDom` の
+ * opacity 書き込み（useFrame 内で行われる）も含めて永久に凍結する
+ * （発見: 凜さん 2026-07-07「全然ダメ」指摘の調査。`paused` 初出時にこの
+ * `invalidate()` 呼び出しを欠いており、一部要素が永久に opacity 0 のまま
+ * 固まる退行を引き起こした）。
+ */
+function ResumeOnUnpause({ paused }: { paused: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+  const prevPausedRef = useRef(paused);
+  useEffect(() => {
+    if (prevPausedRef.current && !paused) invalidate();
+    prevPausedRef.current = paused;
+  }, [paused, invalidate]);
+  return null;
 }
 
 function isWebGLAvailable(): boolean {
@@ -229,6 +255,7 @@ export function GlyphDust(props: GlyphDustProps) {
         frameloop={paused ? "never" : "always"}
         style={{ width: "100%", height: "100%" }}
       >
+        <ResumeOnUnpause paused={paused} />
         <GlyphPoints
           keyframes={keyframes}
           count={particleCount}
