@@ -121,6 +121,23 @@ export function GlyphDust(props: GlyphDustProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoplay?.playOnView]);
 
+  // autoplay: keyframes の参照が変わったら「新しい物語」として時計を巻き戻す。
+  // 従来 startMsRef/lastAutoRef はコンポーネント生存中ずっとリセットされず、
+  // 呼び出し側が同一インスタンスを使い回して keyframes だけ差し替える構成
+  // （例: 1 つの WebGL コンテキストを複数要素で使い回すプール実装）だと、
+  // 最初の 1 回しか進捗が 0 から進まず、以後は elapsed 時間がずっと duration を
+  // 超えたまま＝常に progress=1（アニメーションなしで即座に完成形）になって
+  // いた。keyframes 変化を「新規再生の合図」として明示的に扱う。
+  // playOnView:true で画面外にいる間の keyframes 差し替えは、時計だけ戻し
+  // 再生開始は引き続き IntersectionObserver に委ねる（無条件再生はしない）。
+  useEffect(() => {
+    if (!autoplay) return;
+    startMsRef.current = null;
+    lastAutoRef.current = 0;
+    if (autoplay.playOnView === false) playingRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyframes]);
+
   const getProgress = useCallback(() => {
     if (driver.type === "manual") return manualRef.current;
     if (driver.type === "autoplay") {

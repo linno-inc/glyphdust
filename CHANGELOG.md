@@ -4,6 +4,29 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] — 2026-07-07
+
+### Fixed
+
+- **`<GlyphDust>` の autoplay ドライバが `keyframes` の差し替えで再始動しなかった
+  不具合を修正。** `startMsRef`/`lastAutoRef`（進捗計算に使う経過時間の起点）は
+  コンポーネント生存期間中一度もリセットされず、`playOnView:false` では
+  マウント時に一度だけ再生開始していた。呼び出し側が「同一インスタンスの
+  WebGL コンテキストを保ったまま `keyframes` だけ差し替えて次の演出を再生する」
+  構成（例: 複数要素を 1 つの持続的な Canvas プールで順に処理する設計）だと、
+  2 回目以降は経過時間が既に `duration` を超えたまま＝常に `progress=1`
+  （アニメーションなしで即座に完成形）になっていた。`keyframes` の参照が
+  変わるたびに時計を巻き戻す `useEffect` を追加。`playOnView:true` で画面外の
+  間の差し替えは、再生開始の判断自体は引き続き IntersectionObserver に委ねる
+  （時計だけ戻し、無条件再生はしない）。
+  LINNO corporate site の `GlyphTextManager.tsx`（ページ内の全テキストを粒子で
+  組み上げる統括部品）が、要素ごとに `<GlyphDust>` を都度マウント/破棄する
+  実装だったため、密なグリッドセクションで WebGL コンテキストの生成・破棄が
+  ブラウザの回収に追いつかず「Context Lost」が発生し粒子が出ない不具合が
+  実ブラウザで確認された（提案者: 凜さん 2026-07-07「問題を集めて計画立てて」
+  →「根本解決を美しく」）。持続的な Canvas プール方式へ再設計する前提として
+  この修正が必要だった。
+
 ## [0.9.0] — 2026-07-06
 
 ### Added
