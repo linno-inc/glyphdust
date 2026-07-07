@@ -304,6 +304,8 @@ target shows plain centered text instead of a blank box.
 | `dpr` | `[number, number]` | `[1, 1.75]` | r3f Canvas device-pixel-ratio range. |
 | `fallback` | `ReactNode` | — | Rendered on reduced-motion / no-WebGL (prevents a blank screen). |
 | `className` | `string` | — | Class on the wrapper element. |
+| `resampleSignal` | `number` | — | Change this value to re-sample `domSelector` keyframe targets (re-run `buildGlyphFromDOM`) while keeping the same Canvas/WebGL context — useful when the target element keeps scrolling (not sticky) and drifts from its initially-sampled position. |
+| `paused` | `boolean` | `false` | Freeze the render loop (WebGL context stays alive, last frame holds) without unmounting. Use this for a persistent multi-instance pool: keep every `<GlyphDust>` mounted once (to avoid WebGL context churn / `Context Lost` from repeated mount+unmount) and set `paused` on whichever instances are currently idle/hidden, so they cost zero GPU time instead of rendering forever in the background. |
 
 ### Keyframes
 

@@ -65,6 +65,7 @@ export function GlyphDust(props: GlyphDustProps) {
     fallback = null,
     className,
     resampleSignal,
+    paused = false,
   } = props;
 
   const reduced = useReducedMotion();
@@ -225,7 +226,7 @@ export function GlyphDust(props: GlyphDustProps) {
         dpr={dpr}
         camera={{ position: [0, 0, cameraZ], fov: cameraFov }}
         gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-        frameloop="always"
+        frameloop={paused ? "never" : "always"}
         style={{ width: "100%", height: "100%" }}
       >
         <GlyphPoints

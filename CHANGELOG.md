@@ -4,6 +4,28 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.2] — 2026-07-07
+
+### Added
+
+- **`<GlyphDust>` に `paused?: boolean` prop を追加。** `true` の間、内部の
+  r3f `<Canvas>` の描画ループ（requestAnimationFrame）を止める（WebGL
+  コンテキストは維持したまま、最後のフレームで凍結する。`frameloop`
+  `"always"` ⇄ `"never"` の切替）。既定 `false`（挙動不変）。
+
+  **なぜ必要か:** r3f の `<Canvas>` は既定で毎フレーム描画し続けるため、
+  `display:none` 等の CSS で隠しているだけでは GPU 負荷は一切減らない。
+  「WebGL コンテキストを使い回すために常時マウントしておく（生成・破棄の
+  churn を避ける — 0.9.1 の autoplay 再始動修正はこの用途のために追加した）
+  が、実際に見えていない/使っていない間は描画コストを払いたくない」という
+  構成（例: 複数要素をキューで順に処理する持続的 Canvas プール）で、
+  非アクティブなインスタンス分だけ `paused` を立ててレンダリングコストを
+  ゼロに落とせる（発見: 凜さん 2026-07-07「全然ダメ」指摘の調査。LINNO
+  corporate site で GlyphManifesto / GlyphTextManager を持続的 Canvas 方式へ
+  再設計した直後、WebGL コンテキスト枯渇（Context Lost）は解決したが、
+  非表示中のインスタンスも全て毎フレーム描画し続けており、GPU 負荷の累積で
+  ページ全体が重くなっていた）。
+
 ## [0.9.1] — 2026-07-07
 
 ### Fixed
