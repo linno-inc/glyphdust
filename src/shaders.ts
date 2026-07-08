@@ -85,6 +85,7 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uSizeScale;
   uniform float uDrift;
   uniform float uStagger;
+  uniform float uStaggerCollapse;
   uniform float uCurl;
   uniform float uSmoother;
   uniform float uPixelRatio;
@@ -188,9 +189,21 @@ ${attributeDecls}
 
     // --- per-particle stagger: seed で各粒子の到達タイミングを分散 ---
     // 早い粒/遅い粒が生まれ「一斉移動」が「群れが集まる」波動感になる。
-    // 終盤（uStage 0.55→0.85）で窓 w を 0 に畳み、全粒子を正確にターゲットへ
+    // 各キーフレーム到達点の直前で窓 w を 0 に畳み、全粒子を正確にターゲットへ
     // 収束させる（DOM 整列・resolve のピクセル一致を壊さないため）。
-    float w = uStagger * (1.0 - smoothRange(0.55, 0.85, uStage));
+    //
+    // 【2026-07-08 修正】旧実装は uStage の固定範囲 0.55→0.85 でだけ畳んでいた。
+    // これは元々「2キーフレームのみ（LINNO→タグライン）」の GlyphHero 用に
+    // 決め打ちされた値で、そのキーフレームの唯一の収束点がたまたまこの範囲に
+    // 来るよう調整されていた。駅を N 個つなぐ現在の構成（GlyphStageEngine）では
+    // ほとんどの駅の収束点がこの固定範囲の外にあり、stagger が畳まれないまま
+    // 収束するため、他の粒子が止まった後も一部の粒子だけ揺れながら遅れて
+    // 到着し続ける「収束の最後が緩い」体感になっていた（凜さん 2026-07-08
+    // 「収束の最後をもっとスムーズに」）。CPU 側（GlyphPoints.tsx）で
+    // 「現在地から最も近い今後のキーフレーム到達点」までの距離を毎フレーム
+    // 計算し uStaggerCollapse として渡す。固定範囲ではなく全ての到達点で
+    // 同じように畳まれる。
+    float w = uStagger * (1.0 - uStaggerCollapse);
     float stageP = clamp((uStage - aSeed * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 
     // --- キーフレーム間の位置補間（隣接ペアの mix 連鎖） ---
@@ -232,7 +245,16 @@ ${mixChain}
     vAlpha = uSwap * (1.0 - uResolve);
 
     // 点サイズ（遠近 + 個体差）。整列時はやや均一・小さめにして可読性を上げる。
-    float sizeVar = mix(0.55 + aSeed * 0.9, 0.72 + aSeed * 0.35, uSettle);
+    //
+    // 【2026-07-08 収束後に薄くなる不具合を修正】粒子が「粗く太いにじみ」から
+    // 「精密な文字の形」へ収束すると、文字のストロークは細くなるため、同じ
+    // 粒子数でも塗りつぶす面積（見た目の濃さ）が自然と減っていた。実文字への
+    // クロスフェードが始まるまでの間、この「薄くなった精密な粒子文字」が
+    // そのまま表示され続け、「黒いパーティクルが収束した後に白くなって黒に
+    // なっていく」ように見えていた（凜さん 2026-07-08 実機報告。ピクセル
+    // 密度の実測で可視darkness比が0.365→0.268へ約27%低下することを確認済み）。
+    // 整列時の粒サイズ下限を引き上げ、薄く見える現象を打ち消す。
+    float sizeVar = mix(0.55 + aSeed * 0.9, 1.55 + aSeed * 0.35, uSettle);
     // 字形収束時は隣接粒子で隙間を埋めるためわずかに大きめ＆均一に。
     sizeVar = mix(sizeVar, 0.95 + aSeed * 0.18, uForm);
     // 高 dpr 環境では小粒・上限低めの方がエッジが締まり高精細に見える
@@ -242,7 +264,11 @@ ${mixChain}
     // 点サイズ上限。既定は 4〜5px（高精細・霞まない実証値）。uSizeScale(style.size) を
     // 掛けることで、収束時に「隙間なく塗られた solid なテキスト」を作りたいときは
     // style.size>1 で上限も引き上げられる（既定 uSizeScale=1 で挙動不変）。
-    gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.0, uForm) * uPixelRatio * max(uSizeScale, 1.0));
+    // 【2026-07-08】uSettle も上限に反映する。旧式は uForm（駅N全体の先頭/
+    // 末尾遷移でのみ非ゼロ）だけが上限を上げていたため、途中の駅（uForm=0の
+    // まま）では sizeVar 側をいくら大きくしてもこの上限にクランプされ、
+    // 「収束後に薄くなる」不具合の修正が効かなかった。
+    gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 5.5, max(uForm, uSettle)) * uPixelRatio * max(uSizeScale, 1.0));
   }
 `;
 }
@@ -283,8 +309,11 @@ export const FRAGMENT_SHADER = /* glsl */ `
     float depthFade = clamp(1.0 - (vDepth - 3.0) * 0.10, floorFade, 1.0);
 
     // 整列時は不透明寄りにしてエッジを締める。
+    // 【2026-07-08 ブースト倍率を1.3→1.7に引き上げ】上の sizeVar コメント
+    // 参照。粒サイズ拡大と合わせて、精密な字形に収束した粒子がストローク幅の
+    // 減少分だけ薄く見える現象を打ち消す。
     float a = alpha * depthFade * vAlpha;
-    a = mix(a, clamp(a * 1.3, 0.0, 1.0), vSettle);
+    a = mix(a, clamp(a * 2.2, 0.0, 1.0), vSettle);
 
     gl_FragColor = vec4(col, a);
   }

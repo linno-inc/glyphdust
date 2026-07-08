@@ -23,10 +23,13 @@ import {
 } from "./shaders.js";
 import {
   DEFAULT_DENSE_FONT,
-  buildKeyframeTargets,
+  buildKeyframeTargetsList,
+  buildScatterAroundAnchor,
+  buildScatterAroundTargets,
   bump,
   formsGlyph,
   isMobile,
+  scatterGlyphRefIndex,
   smooth,
 } from "./internal/geometry.js";
 import type { Keyframe } from "./types.js";
@@ -48,6 +51,7 @@ export interface ResolvedStyle {
   curl: number;
   easing: "smoothstep" | "smootherstep";
   scatterPattern: "random" | "fibonacci";
+  burst: number;
 }
 
 /**
@@ -70,6 +74,7 @@ interface GlyphUniforms {
   uSizeScale: THREE.IUniform<number>;
   uDrift: THREE.IUniform<number>;
   uStagger: THREE.IUniform<number>;
+  uStaggerCollapse: THREE.IUniform<number>;
   uCurl: THREE.IUniform<number>;
   uSmoother: THREE.IUniform<number>;
   uSparkle: THREE.IUniform<number>;
@@ -167,6 +172,52 @@ export function GlyphPoints(props: GlyphPointsProps) {
   const timeline = useMemo(() => {
     const isText = keyframes.map((k) => formsGlyph(k));
     const isScatter = keyframes.map((k) => k.type === "scatter");
+
+    // settle 用の「同一字形グループ」境界（各要素 i の所属グループの
+    // [start, end] キーフレーム index）。同一 text+domSelector が連続する
+    // キーフレーム（例: 駅の form→hold ペア。同一バッファを共有する
+    // geometry.ts の sameGlyphKeyframe と同じ判定基準）は 1 つのグループに
+    // まとめる。
+    //
+    // 【2026-07-08 発見・修正】旧実装は settle を「キーフレームごとに個別の
+    // bump(s,c,prev,next)」の max で求めていた。form→hold ペアは同一位置
+    // （バッファ共有）だが times 上は t0≠t1 の別キーフレームなので、
+    // form 側の bump は c=t0 をピークに t0→t1 で下降し、hold 側の bump は
+    // c=t1 をピークに t0→t1 で上昇する——2 つの相補的カーブの max は、
+    // ちょうど中間点（t0とt1の中央）で最小値 0.5 まで沈む。settle は
+    // 点サイズ・不透明度ブースト（フラグメントシェーダの 1.3 倍ブースト）の
+        // 両方を駆動するため、この沈み込みが「収束した直後に一度薄く（白っぽく）
+    // なってからまた濃くなる」という実在のちらつきを生んでいた（凜さん
+    // 2026-07-08「黒いパーティクルが収束した後に白くなって黒になっていく」
+    // 実機報告・実測でDOM opacity=0のまま可視密度が0.366→0.268へ約27%低下
+    // することを確認）。同一グループの内部境界を無視し、グループ全体を
+    // 「1つの安定した山（前だけ立ち上がり・後だけ下降、中は常に1）」として
+    // 扱うことで沈み込みを解消する。
+    const groupStart: number[] = new Array(n).fill(0);
+    const groupEnd: number[] = new Array(n).fill(0);
+    for (let i = 0; i < n; ) {
+      const kf = keyframes[i];
+      if (kf?.type !== "text") {
+        groupStart[i] = i;
+        groupEnd[i] = i;
+        i += 1;
+        continue;
+      }
+      let j = i;
+      while (
+        j + 1 < n &&
+        keyframes[j + 1]?.type === "text" &&
+        (keyframes[j + 1] as { text: string; domSelector?: string }).text === kf.text &&
+        (keyframes[j + 1] as { domSelector?: string }).domSelector === kf.domSelector
+      ) {
+        j += 1;
+      }
+      for (let k = i; k <= j; k++) {
+        groupStart[k] = i;
+        groupEnd[k] = j;
+      }
+      i = j + 1;
+    }
     const last = keyframes[n - 1];
     const hasResolve =
       n >= 1 && last?.type === "text" && last.resolveToDom === true;
@@ -192,6 +243,8 @@ export function GlyphPoints(props: GlyphPointsProps) {
       d: number; // 退場フェード完了
       isStart: boolean;
       isFinal: boolean;
+      /** 出発駅窓: 粒子ゲートにだけ参加し、実 DOM の opacity/filter は書かない。 */
+      holdResolved: boolean;
     }[] = [];
     let gi = 0;
     while (gi < n) {
@@ -209,6 +262,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       const wantsResolve = keyframes
         .slice(gi, gj + 1)
         .some((g) => g.type === "text" && g.resolveToDom === true);
+      const holdResolved = keyframes
+        .slice(gi, gj + 1)
+        .some((g) => g.type === "text" && g.holdResolved === true);
       if (wantsResolve) {
         const t0 = times[gi] ?? 0;
         const t1 = times[gj] ?? 1;
@@ -230,7 +286,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
         // いなくてもクロスフェードのボケが吸収し、境界のズレとしては見えない。
         // 加えて最低限の保持幅 minPlateau を必ず確保する。
         //
-        // rise/minPlateau は span（t1-t0）の 25%/15% が理想だが、span が狭いキーフレーム
+        // rise/minPlateau は span（t1-t0）の 42%/15% が理想だが、span が狭いキーフレーム
         // 構成では 2*rise+minPlateau が span を超え、旧実装は a を t0 にクランプするだけ
         // だった。c（退場フェード開始 = t1-rise）は span に関わらず変わらないため、
         // クランプされた a（→ b = a+rise）が c を追い越し「一瞬光ってすぐ消える」不具合が
@@ -238,8 +294,31 @@ export function GlyphPoints(props: GlyphPointsProps) {
         // じゃなくなってる」）。ここでは rise と minPlateau を span に収まるよう比例縮小し、
         // b <= c（フェードイン完了 <= フェードアウト開始）を span の広さによらず数式的に
         // 保証する（0.001 は smooth() の a===b 除算 0 を避けるための下限）。
+        //
+        // 【2026-07-08 rise を 25%→32%に拡大】実測で判明: 実文字は opacity=0・
+        // blur=6px のまま長く待機した後、わずかなスクロール量で一気に
+        // opacity=1・blur=0 まで到達していた（凜さん 2026-07-08「テキストが
+        // 白から黒に変わるので、なんかちらつきが見えます」）。当初 42% まで
+        // 広げたが、2*rise+minPlateau が span のほぼ全体（0.99）を占め、
+        // 真ん中の安定保持区間がほぼ消滅。非最終駅（isFinal でない駅）は
+        // 「一瞬光ってすぐ消える」（この直前のコメントで既知の不具合として
+        // 警告されていたまさにその症状）が再発した。
+        //
+        // 【付随要素とのズレも同時に発覚・修正】このrise変更とは別に、
+        // 付随要素（番号・要約。glyph-stage.ts の wireChapterAccessories）が
+        // 実文字本体とは異なる式（単純な smoothstep(t0,t1)）でフェードして
+        // いたため、rise の値によらず「実文字はもう明滅し終わっているのに、
+        // 番号・要約はまだ上がっている最中」という構造的なズレが以前から
+        // 常に存在していた（凜さん 2026-07-08「ずれるようになりました。
+        // まただ」実機報告。rise=25%に完全に戻しても再現したことで、
+        // rise拡大が原因ではなく既存の設計不整合だったと判明）。
+        // glyph-stage.ts 側に同一の窓計算（computeWindow）を追加し、
+        // 付随要素も実文字と全く同じ [a,b,c,d] 窓でフェードするよう修正した
+        // （そちら側のコメント参照）。これで rise を安全に広げられるように
+        // なったため、安定保持区間を十分残しつつ改善幅を確保する 32% を採用
+        // （2*0.32+0.15=0.79、span に対して余裕あり）。
         const span = Math.max(t1 - t0, 0);
-        const desiredRise = span > 0 ? span * 0.25 : 0.02;
+        const desiredRise = span > 0 ? span * 0.44 : 0.02;
         const desiredPlateau = span * 0.15;
         const totalDesired = desiredRise * 2 + desiredPlateau;
         const shrink =
@@ -258,12 +337,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
           d: t1,
           isStart: gi === 0,
           isFinal: gj === n - 1,
+          holdResolved,
         });
       }
       gi = gj + 1;
     }
 
-    return { isText, isScatter, hasResolve, resolveText, swapAt, windows };
+    return { isText, isScatter, hasResolve, resolveText, swapAt, windows, groupStart, groupEnd };
   }, [keyframes, n, times, style.stagger]);
 
   // geometry（aPos0..aPosN-1 + aSeed + aAccent）。
@@ -281,15 +361,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const vpH = typeof window !== "undefined" ? window.innerHeight : 900;
     const { worldW: visW } = viewSizeAtZ0(vpW, vpH, cameraFov, cameraZ);
 
-    const buffers = keyframes.map((kf) =>
-      buildKeyframeTargets(kf, count, {
-        visW,
-        mobile,
-        cameraFov,
-        cameraZ,
-        scatterPattern: style.scatterPattern,
-      }),
-    );
+    const buffers = buildKeyframeTargetsList(keyframes, count, {
+      visW,
+      mobile,
+      cameraFov,
+      cameraZ,
+      scatterPattern: style.scatterPattern,
+    });
 
     buffers.forEach((buf, i) => {
       geo.setAttribute(
@@ -325,6 +403,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uSizeScale: { value: style.size },
       uDrift: { value: style.drift },
       uStagger: { value: style.stagger },
+      uStaggerCollapse: { value: 0 },
       uCurl: { value: style.curl },
       uSmoother: { value: style.easing === "smoothstep" ? 0 : 1 },
       uSparkle: { value: style.sparkle },
@@ -420,18 +499,79 @@ export function GlyphPoints(props: GlyphPointsProps) {
 
   // 初回 / フォント読込 / リサイズで再サンプリング・再配置（DOM とピタリ重ねる）。
   const rebuildDomGlyphs = () => {
+    const updated = new Set<number>();
+    // 同一字形（同一テキスト・同一 domSelector）の連続キーフレームは 1 回だけ
+    // サンプリングして共有する。独立にサンプリングすると粒子割り当てが乱数で
+    // 変わり、保持区間で「同じ字形の別の配置」へ泳ぎ直す再収束が起きる
+    // （geometry.ts の sameGlyphKeyframe コメント参照）。
+    const sampleCache = new Map<string, Float32Array>();
     keyframes.forEach((kf, i) => {
       if (kf.type !== "text" || !kf.domSelector) return;
-      const next = buildGlyphFromDOM(count, kf.text.split("\n"), {
-        selector: kf.domSelector,
-        fovDeg: cameraFov,
-        cameraZ,
-        // 粒子がレンダリングされる canvas の実寸（CSS px）。
-        // window.innerWidth だとスクロールバー分ずれるため size を使う（常に最新値を
-        // 読むため ref 経由。理由は sizeRef 宣言部のコメント参照）。
-        viewportW: sizeRef.current.width,
-        viewportH: sizeRef.current.height,
-      });
+      const cacheKey = `${kf.domSelector} ${kf.text}`;
+      let next = sampleCache.get(cacheKey) ?? null;
+      if (!next) {
+        next = buildGlyphFromDOM(count, kf.text.split("\n"), {
+          selector: kf.domSelector,
+          fovDeg: cameraFov,
+          cameraZ,
+          // 粒子がレンダリングされる canvas の実寸（CSS px）。
+          // window.innerWidth だとスクロールバー分ずれるため size を使う（常に最新値を
+          // 読むため ref 経由。理由は sizeRef 宣言部のコメント参照）。
+          viewportW: sizeRef.current.width,
+          viewportH: sizeRef.current.height,
+        });
+        if (next) sampleCache.set(cacheKey, next);
+      }
+      if (!next) return;
+      const attr = built.geo.getAttribute(glyphPositionAttribute(i)) as
+        | THREE.BufferAttribute
+        | undefined;
+      if (!attr) return;
+      (attr.array as Float32Array).set(next);
+      attr.needsUpdate = true;
+      updated.add(i);
+    });
+    // `around:"glyph"` の局所 scatter は参照字形の位置に追従して作り直す
+    // （参照側が動いたのに雲だけ古い位置に残ると、局所化の意味がなくなる）。
+    // 生成は index 決定論（buildScatterAroundTargets のコメント参照）なので、
+    // 再生成しても雲は参照字形の移動分だけ平行移動し、粒子はワープしない。
+    // attr.array と built.buffers[i] は同一の Float32Array を指すため、
+    // 上の text 更新は built.buffers 経由でここから既に見えている。
+    keyframes.forEach((kf, i) => {
+      if (kf.type !== "scatter") return;
+      let next: Float32Array | null = null;
+      if (kf.anchorSelector) {
+        // 別 canvas の実 DOM 位置への着地（types.ts の anchorSelector 参照）。
+        // 対象は普通のスクロール要素の場合もあるため、参照テキストの更新有無に
+        // 関わらず毎回追従させる（sticky 固定なら値は変わらず無害）。
+        next = buildScatterAroundAnchor(
+          count,
+          kf.spread ?? 1,
+          kf.anchorSelector,
+          {
+            cameraFov,
+            cameraZ,
+            viewportW: sizeRef.current.width,
+            viewportH: sizeRef.current.height,
+            visW: built.visW,
+          },
+          style.scatterPattern,
+        );
+      }
+      if (!next) {
+        if (kf.around !== "glyph") return;
+        const refIdx = scatterGlyphRefIndex(keyframes, i);
+        if (refIdx < 0 || !updated.has(refIdx)) return;
+        const ref = built.buffers[refIdx];
+        if (!ref) return;
+        next = buildScatterAroundTargets(
+          count,
+          kf.spread ?? 1,
+          ref,
+          style.scatterPattern,
+          built.visW,
+        );
+      }
       if (!next) return;
       const attr = built.geo.getAttribute(glyphPositionAttribute(i)) as
         | THREE.BufferAttribute
@@ -540,13 +680,30 @@ export function GlyphPoints(props: GlyphPointsProps) {
     // --- 補間スカラ（CPU 側で意味論を解決し uniform へ） ---
     let settle = 0;
     let burst = 0;
+    // 全キーフレーム到達点に対する stagger 収束窓（shaders.ts の uStaggerCollapse
+    // コメント参照）。各到達点 times[i] の直前で 0→1 に立ち上がり、その瞬間には
+    // 必ず全粒子が寸分違わずターゲットへ揃う。窓幅は前のキーフレームとの間隔の
+    // 半分（間隔が狭い駅では窓も比例して狭める。広すぎると手前の駅の保持中に
+    // 次の収束の畳み込みが早期発火してしまう）。
+    let staggerCollapse = 0;
     for (let i = 0; i < n; i++) {
       const c = times[i] ?? 0;
       const prev = times[i - 1] ?? 0;
       const next = times[i + 1] ?? 1;
-      const b = bump(s, c, prev, next);
-      if (timeline.isText[i]) settle = Math.max(settle, b);
-      if (timeline.isScatter[i]) burst = Math.max(burst, b);
+      // settle は「同一字形グループ」単位で計算する（timeline.groupStart/End
+      // コメント参照。個別キーフレームごとの bump の max だと、同一グループ
+      // 内部の境界で沈み込みが起きるため、グループの先頭でのみ 1 回計算する）。
+      if (timeline.isText[i] && i === timeline.groupStart[i]) {
+        const gEnd = timeline.groupEnd[i]!;
+        const groupPrev = times[i - 1] ?? 0;
+        const groupNext = times[gEnd + 1] ?? 1;
+        const rise = smooth(groupPrev, c, s);
+        const fall = 1 - smooth(times[gEnd] ?? c, groupNext, s);
+        settle = Math.max(settle, rise * fall);
+      }
+      if (timeline.isScatter[i]) burst = Math.max(burst, bump(s, c, prev, next));
+      const width = Math.max(0.02, (c - prev) * 0.5);
+      staggerCollapse = Math.max(staggerCollapse, smooth(c - width, c, s));
     }
 
     // form: 最終キーフレームが text/shape のとき、その最終遷移の進捗。
@@ -585,24 +742,50 @@ export function GlyphPoints(props: GlyphPointsProps) {
         const amt =
           (w.isStart ? 1 : smooth(w.a, w.b, s)) *
           (w.isFinal ? 1 : 1 - smooth(w.c, w.d, s));
-        let el = windowElsRef.current.get(w.selector);
-        // el が取れているのに DOM から外れている（React の条件描画/キー変更で
-        // 差し替えられた等）場合は再取得する。isConnected を見ないと、差し替え後の
-        // 要素には一切書き込まれず無警告のまま外れた古い要素に opacity を流し続ける。
-        if (el === undefined || (el !== null && !el.isConnected)) {
-          el = document.querySelector<HTMLElement>(w.selector);
-          windowElsRef.current.set(w.selector, el);
-        }
-        if (el) {
-          el.style.opacity = String(amt);
-          // 滲み出し/溶け戻り中は軽くぼかし、定着でピントが合う（morphTo と同じ表現）。
-          const blur = (1 - amt) * 6;
-          el.style.filter =
-            amt > 0.01 && blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+        // 出発駅窓（holdResolved）は粒子ゲートにだけ参加し、実 DOM には触らない
+        // （群れが飛び立っても実文字は crisp のまま残る。types.ts のコメント参照）。
+        if (!w.holdResolved) {
+          let el = windowElsRef.current.get(w.selector);
+          // el が取れているのに DOM から外れている（React の条件描画/キー変更で
+          // 差し替えられた等）場合は再取得する。isConnected を見ないと、差し替え後の
+          // 要素には一切書き込まれず無警告のまま外れた古い要素に opacity を流し続ける。
+          if (el === undefined || (el !== null && !el.isConnected)) {
+            el = document.querySelector<HTMLElement>(w.selector);
+            windowElsRef.current.set(w.selector, el);
+          }
+          if (el) {
+            el.style.opacity = String(amt);
+            // 滲み出し/溶け戻り中は軽くぼかし、定着でピントが合う（morphTo と同じ表現）。
+            //
+            // 【2026-07-08 filter の on/off 切替を廃止】旧実装は blur が閾値を下回ると
+            // `filter` プロパティ自体を空文字列に戻していた（"blur(0.05px)" → ""）。
+            // ブラウザは filter 適用中と未適用で描画パイプライン（GPU合成レイヤーの
+            // 有無）が異なるため、この境界をまたぐ瞬間にレンダリングが一瞬切り替わり
+            // 「収束したときにちらつく」ように見えていた（凜さん 2026-07-08 実機報告）。
+            // filter プロパティは常に blur() で設定したままにし（0px でも filter 自体は
+            // 適用され続ける）、値だけを連続的に 0 へ近づける。これで描画パイプラインの
+            // 切り替わりが一切発生しなくなる。
+            const blur = Math.max(0, (1 - amt) * 6);
+            el.style.filter = `blur(${blur.toFixed(2)}px)`;
+          }
         }
         if (amt > amtMax) amtMax = amt;
       }
-      resolve = amtMax;
+      // 粒子の溶解は実テキストの立ち上がりに「先行」させる（0.9.5）。
+      // 旧: resolve = amtMax（粒子の透明化＝テキスト不透明度の同一カーブ）。
+      // 同一カーブだと、テキストがほぼ読める状態（amt 0.7〜0.95）でも stagger の
+      // 遅参粒子がうっすら見えたまま動き続け、「収束しきった後もスタート地点で
+      // 粒子がちょっと揺れる」体感になっていた（凜さん 2026-07-08「これなくしたい」。
+      // 実測: 収束後もテキスト前面で約 1 秒間ピクセル変化が継続）。
+      //
+      // 【2026-07-08 再調整】初版は amt 0.2→0.72 で粒子を消し切っていたが、
+      // 0.72 という早いカットオフのせいで「amt 0.72〜1.0 の間は何も起きない
+      // 静止区間」が生まれ、収束が「途中で唐突にパッと切り替わって終わる」
+      // 体感になっていた（凜さん 2026-07-08「収束のスタイルが変わった・
+      // 収束が急になった」）。上限を 0.9 まで押し戻し、粒子が消えるまでの
+      // 余韻を長く保ちつつ（残り揺れが出ていた amt=1 付近の直前で確実に
+      // 消し切るので元の不具合は再発しない）、唐突さを解消する。
+      resolve = smooth(0.3, 0.9, amtMax);
       textReveal = 0; // 旧経路（resolveRef / resolveDomSelector）は使わない
     }
 
@@ -610,7 +793,8 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uStage.value = s;
     u.uForm.value = form;
     u.uSettle.value = settle;
-    u.uBurst.value = burst * (1 - form);
+    u.uStaggerCollapse.value = staggerCollapse;
+    u.uBurst.value = burst * (1 - form) * style.burst;
     u.uSwap.value = swapped;
     u.uResolve.value = resolve;
 

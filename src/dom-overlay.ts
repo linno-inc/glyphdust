@@ -113,14 +113,30 @@ export function buildGlyphFromDOM(
     /* Range 不可 → 要素矩形のまま */
   }
 
-  // Range 矩形はテキストにタイトなので、画面原点＝テキスト左上。
+  // Range 矩形はテキストにタイトなので、画面原点＝テキスト左上
+  // （下の pad 分だけ内側にオフセットする。すぐ下のコメント参照）。
   const contentLeft = rect.left;
   const contentTop = rect.top;
-  const cwCss = rect.width;
+
+  // 安全マージン: canvas の fillText は Range API（レイアウトエンジンの実測）より
+  // わずかに広く描画されることがある（負の letter-spacing・bold 系フォントウェイト
+  // で実測: canvas 側の実描画幅が Range 幅より数px 大きい）。canvas を Range 矩形
+  // ぴったりのサイズにすると、はみ出た右端（太字の最終文字の右肩など）が canvas の
+  // 外に描かれて getImageData に一切写らず、粒子字形の右端が欠ける
+  // （凜さん 2026-07-08「右側が切れてる」実機報告・実測で確認: canvas 実測幅が
+  // Range 幅より約3px 広いケースを確認）。四辺に pad 分の余白を持たせ、描画原点も
+  // 同じだけ内側にずらすことで、どの方向のはみ出しも canvas 内に収まるようにする。
+  const pad = Math.max(4, fontSize * 0.08);
+  // textBoxW/H は「元の（パディング無し）テキスト矩形」— 描画原点は ctx.translate(pad,pad)
+  // で既にずらしてあるので、揃え位置（lineX 等）の基準はこちらを使う。cwCss/chCss は
+  // canvas 実寸（パディング込み）にのみ使う。
+  const textBoxW = rect.width;
+  const cwCss = rect.width + pad * 2;
+  const chCss = rect.height + pad * 2;
 
   const res = opts.resolution ?? 2;
-  const cw = Math.max(2, Math.ceil(rect.width * res));
-  const ch = Math.max(2, Math.ceil(rect.height * res));
+  const cw = Math.max(2, Math.ceil(cwCss * res));
+  const ch = Math.max(2, Math.ceil(chCss * res));
   const canvas = document.createElement("canvas");
   canvas.width = cw;
   canvas.height = ch;
@@ -129,6 +145,7 @@ export function buildGlyphFromDOM(
 
   ctx.clearRect(0, 0, cw, ch);
   ctx.scale(res, res); // 以降は CSS px 座標で描く
+  ctx.translate(pad, pad); // 安全マージン分だけ描画原点をずらす
   ctx.fillStyle = "#000";
   // 各行の水平位置は要素の text-align に従う。旧実装は常に中央寄せで、
   // 左揃えの複数行（行幅が違う）だと短い行が (最長行幅 − 行幅)/2 だけ右にずれた
@@ -144,7 +161,7 @@ export function buildGlyphFromDOM(
         ? "right"
         : "left"; // left / start(ltr) / justify / その他
   ctx.textAlign = align;
-  const lineX = align === "center" ? cwCss / 2 : align === "right" ? cwCss : 0;
+  const lineX = align === "center" ? textBoxW / 2 : align === "right" ? textBoxW : 0;
   ctx.textBaseline = "alphabetic";
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   if ("letterSpacing" in ctx) {
@@ -220,8 +237,10 @@ export function buildGlyphFromDOM(
   const out = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const idx = order[i % filled]!;
-    const cx = pts[idx * 2]! / res; // canvas → CSS px（コンテンツ原点）
-    const cy = pts[idx * 2 + 1]! / res;
+    // canvas → CSS px（コンテンツ原点）。ctx.translate(pad,pad) で描画原点をずらした分、
+    // ここで pad を引いて「元のテキスト矩形」基準の座標に戻す。
+    const cx = pts[idx * 2]! / res - pad;
+    const cy = pts[idx * 2 + 1]! / res - pad;
 
     // CSS px（画面絶対座標）。
     const sx = contentLeft + cx;
@@ -237,6 +256,45 @@ export function buildGlyphFromDOM(
     out[i * 3 + 2] = (random() - 0.5) * thickness;
   }
   return out;
+}
+
+/** {@link sampleAnchorCenterWorld} のオプション。 */
+export interface AnchorCenterOptions {
+  /** 対象 DOM 要素のセレクタ。 */
+  selector: string;
+  fovDeg: number;
+  cameraZ: number;
+  viewportW?: number;
+  viewportH?: number;
+}
+
+/**
+ * 指定セレクタの DOM 要素の画面中心を world(z=0) 座標へ変換する。
+ * {@link buildGlyphFromDOM} と違い文字の塗りピクセルは走査せず、要素の
+ * バウンディングボックス中心だけを使う（他 canvas の scatter の着地点を
+ * 示すためだけの軽量版。{@link import("./types.js").ScatterKeyframe.anchorSelector} 参照）。
+ * 要素が無い/計測不能なら null。
+ */
+export function sampleAnchorCenterWorld(
+  opts: AnchorCenterOptions,
+): { cx: number; cy: number } | null {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    return null;
+  }
+  const el = document.querySelector(opts.selector);
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return null;
+
+  const vpW = opts.viewportW ?? window.innerWidth;
+  const vpH = opts.viewportH ?? window.innerHeight;
+  const { worldW, worldH } = viewSizeAtZ0(vpW, vpH, opts.fovDeg, opts.cameraZ);
+  const sx = rect.left + rect.width / 2;
+  const sy = rect.top + rect.height / 2;
+  return {
+    cx: (sx / vpW - 0.5) * worldW,
+    cy: -(sy / vpH - 0.5) * worldH,
+  };
 }
 
 /** {@link alignGlyphOverlay} のオプション。 */

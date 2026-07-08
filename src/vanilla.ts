@@ -21,6 +21,7 @@ import {
   DEFAULT_DENSE_FONT,
   DEFAULT_TEXT_FONT,
   buildKeyframeTargets,
+  buildKeyframeTargetsList,
   bump,
   formsGlyph,
   isMobile,
@@ -225,13 +226,14 @@ interface ResolvedStyle {
   curl: number;
   easing: "smoothstep" | "smootherstep";
   scatterPattern: "random" | "fibonacci";
+  burst: number;
 }
 
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
 };
 
 function resolveStyle(preset: GlyphPreset, style?: GlyphStyle): ResolvedStyle {
@@ -245,6 +247,7 @@ function resolveStyle(preset: GlyphPreset, style?: GlyphStyle): ResolvedStyle {
     curl: style?.curl ?? base.curl,
     easing: style?.easing ?? base.easing,
     scatterPattern: style?.scatterPattern ?? base.scatterPattern,
+    burst: style?.burst ?? base.burst,
   };
 }
 
@@ -410,20 +413,18 @@ export function glyphText(
     seed[i] = Math.random();
     accentAttr[i] = Math.random() < accentRatio ? 1 : 0;
   }
-  const buffers = keyframes.map((kf) =>
-    buildKeyframeTargets(kf, count, {
-      visW,
-      mobile,
-      cameraFov,
-      cameraZ,
-      scatterPattern: style.scatterPattern,
-      // canvas 実寸（=対象要素の実寸）を渡し、スクロールバー分の横ズレを消す。
-      // これが無いと domSelector サンプリングが window.innerWidth 基準になり、粒子字形が
-      // 実 DOM 文字から数 px 横へずれる（凜さん 2026-07-01「ちょっとずれてる」）。
-      viewportW: w,
-      viewportH: h,
-    }),
-  );
+  const buffers = buildKeyframeTargetsList(keyframes, count, {
+    visW,
+    mobile,
+    cameraFov,
+    cameraZ,
+    scatterPattern: style.scatterPattern,
+    // canvas 実寸（=対象要素の実寸）を渡し、スクロールバー分の横ズレを消す。
+    // これが無いと domSelector サンプリングが window.innerWidth 基準になり、粒子字形が
+    // 実 DOM 文字から数 px 横へずれる（凜さん 2026-07-01「ちょっとずれてる」）。
+    viewportW: w,
+    viewportH: h,
+  });
   buffers.forEach((buf, i) => {
     geo.setAttribute(glyphPositionAttribute(i), new THREE.BufferAttribute(buf, 3));
   });
@@ -689,7 +690,7 @@ export function glyphText(
     u.uStage!.value = s;
     u.uForm!.value = form;
     u.uSettle!.value = settle;
-    u.uBurst!.value = burst * (1 - form);
+    u.uBurst!.value = burst * (1 - form) * style.burst;
     // ストリーミング中は実 DOM 受け渡し（resolve）を使わない（任意テキストと整合しない）。
     if (resolveMode && !streaming) {
       // 拡散（冒頭）: 実文字→粒子を swap 点で瞬時に切らず、短い窓でクロスフェードして
@@ -718,19 +719,22 @@ export function glyphText(
       const endResolve = stream.resolveEl ? smooth(0.68, 0.97, s) : 0;
       const reveal = stream.resolveEl ? smooth(0.52, 0.92, s) : 0;
       u.uResolve!.value = Math.max(backResolve, endResolve);
+      // 【2026-07-08 filter の on/off 切替を廃止。GlyphPoints.tsx 側の同種修正・
+      // コメント参照】blur が閾値を下回ると filter プロパティ自体を空文字列に
+      // 戻す旧実装は、ブラウザの描画パイプライン（GPU合成レイヤーの有無）が
+      // 切り替わる瞬間に「収束したときにちらつく」体感を生んでいた。filter は
+      // 常に blur() で設定したままにし、値だけ連続的に 0 へ近づける。
       if (stream.prevOverlay && stream.prevOverlay !== stream.resolveEl) {
         const prevOp = stream.prevOverlayOp0 * (1 - back);
         stream.prevOverlay.style.opacity = String(prevOp);
-        const prevBlur = back * 6;
-        stream.prevOverlay.style.filter =
-          prevBlur > 0.1 && prevOp > 0.01 ? `blur(${prevBlur.toFixed(1)}px)` : "";
+        const prevBlur = Math.max(0, back * 6);
+        stream.prevOverlay.style.filter = `blur(${prevBlur.toFixed(2)}px)`;
       }
       if (stream.resolveEl) {
         stream.resolveEl.style.opacity = String(reveal);
         // 粒子雲の「まだ形になっていない」うちは強くぼかし、着地に合わせてピントを合わせる。
-        const blur = (1 - smooth(0.52, 0.97, s)) * 7;
-        stream.resolveEl.style.filter =
-          blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+        const blur = Math.max(0, (1 - smooth(0.52, 0.97, s)) * 7);
+        stream.resolveEl.style.filter = `blur(${blur.toFixed(2)}px)`;
       }
     } else {
       u.uSwap!.value = 1; // 進捗 0 から可視（実 DOM 文字の受け渡しゲート無し）
@@ -740,9 +744,8 @@ export function glyphText(
         const reveal = smooth(0.52, 0.92, s);
         u.uResolve!.value = endResolve;
         initResolveEl.style.opacity = String(reveal);
-        const blur = (1 - smooth(0.52, 0.97, s)) * 7;
-        initResolveEl.style.filter =
-          blur > 0.1 ? `blur(${blur.toFixed(1)}px)` : "";
+        const blur = Math.max(0, (1 - smooth(0.52, 0.97, s)) * 7);
+        initResolveEl.style.filter = `blur(${blur.toFixed(2)}px)`;
       } else {
         u.uResolve!.value = 0;
       }
@@ -808,7 +811,7 @@ export function glyphText(
   const snapshotInto = (out: Float32Array) => {
     const s = lastStage;
     const { burst, form } = computeScalars(s);
-    const burstAmt = burst * (1 - form); // renderFrame が uBurst に入れる値と同じ
+    const burstAmt = burst * (1 - form) * style.burst; // renderFrame が uBurst に入れる値と同じ
     const w = style.stagger * (1 - smoothMix(0.55, 0.85, s));
     const invW = 1 / Math.max(1 - w, 0.001);
     const bufs = tl.buffers;

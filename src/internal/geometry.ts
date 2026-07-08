@@ -14,7 +14,7 @@ import {
   buildShapeTargets,
   type Random,
 } from "../sampling.js";
-import { buildGlyphFromDOM } from "../dom-overlay.js";
+import { buildGlyphFromDOM, sampleAnchorCenterWorld } from "../dom-overlay.js";
 import type { Keyframe } from "../types.js";
 
 /**
@@ -95,6 +95,183 @@ export function buildScatter(
     out[i * 3 + 2] = Math.sin(theta) * rxy * r * 0.9;
   }
   return out;
+}
+
+/**
+ * 決定論的な疑似乱数（mulberry32）。粒子 index から作る。
+ *
+ * 局所散開（{@link buildScatterAroundTargets}）専用。局所散開のターゲットは
+ * domSelector の再サンプリングのたびに再生成されるため、`Math.random` を使うと
+ * 再生成のたびに雲の形そのものが変わり、散開フェーズ表示中の再サンプリングで
+ * 粒子が一斉にワープする。index 決定論なら再生成しても各粒子の相対配置は同一で、
+ * 雲は「参照字形の移動分だけ平行移動」しかしない。
+ */
+function seededRandom(seed: number): Random {
+  let a = (seed * 0x9e3779b9) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 参照ターゲット（字形キーフレームの粒子座標）の近傍に漂う局所飛散雲を生成。
+ *
+ * `around:"glyph"`（{@link import("../types.js").ScatterKeyframe.around}）の実体。
+ * 参照字形のバウンディングボックスを計測し、その中心に「字形より一回り大きい
+ * 楕円体」のクラウドを張る。文字行は横長・低背なので、横は字形幅ちょい増し、
+ * 縦は字形高さの倍率を大きめ＋絶対パディングで「文字の上下にふわっと霞む」形にする。
+ *
+ * 参照が退化している（粒子が一点に潰れている等）ときは null を返す
+ * （呼び出し側が従来の全面クラウドへフォールバックする）。
+ */
+export function buildScatterAroundTargets(
+  count: number,
+  spread: number,
+  ref: Float32Array,
+  pattern: "random" | "fibonacci" = "fibonacci",
+  visW?: number,
+): Float32Array | null {
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (let i = 0; i + 2 < ref.length; i += 3) {
+    const x = ref[i]!;
+    const y = ref[i + 1]!;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  const halfW = (maxX - minX) / 2;
+  const halfH = (maxY - minY) / 2;
+  // 一点クラスタ（サンプリング失敗のフォールバック等）は「字形の近傍」が定義
+  // できないので全面クラウドに任せる。
+  if (halfW < 0.05 && halfH < 0.05) return null;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // 楕円体の半径。横は字形幅に沿わせ、縦は膨らませて「行の上下の霞」を作る。
+  // 絶対パディング 0.45 は、短い単語でも点にならない最低限の雲サイズ。
+  let rx = (halfW * 1.2 + 0.45) * spread;
+  let ry = (halfH * 2.4 + 0.45) * spread;
+  // 上限クランプ: 参照字形が長文（複数行パラグラフ等）だと halfW/halfH が
+  // 大きく、雲が画面のほとんどを覆う「全面砂嵐」に戻ってしまう（実測で確認:
+  // マニフェスト［5行パラグラフ］の退場 scatter が視野角いっぱいの巨大な雲に
+  // なっていた。凜さん 2026-07-08「マニフェストより下がちゃんと旅になって
+  // ない」報告の実体はこれだった）。可視ワールド幅 visW が分かるときは、
+  // 絶対的な上限として掛け、長文参照でも「近傍の局所雲」の見た目を保つ
+  // （短い参照はそもそもこの上限より小さいので影響しない）。
+  //
+  // 【2026-07-08 さらに拡大】旧上限（画面幅18%/11%）は粒子密度が高く、
+  // 雲が「団子状の丸い塊」に見えていた（凜さん 2026-07-08「一度円になるのが
+  // 変。やめて」「バラバラに拡散したまま移動（団まらない）」との指示）。
+  // 同じ粒子数でも広い範囲に散らせば密度が下がり、個々の粒子がバラけて
+  // 見える＝「丸い塊」ではなく「拡散した粒子群」に見える。上限を約2.4倍に
+  // 拡大。
+  if (visW !== undefined) {
+    rx = Math.min(rx, visW * 0.1);
+    ry = Math.min(ry, visW * 0.065);
+  }
+  const rz = 0.5 * spread;
+  return distributeAroundPoint(count, cx, cy, rx, ry, rz, pattern);
+}
+
+/**
+ * 中心点 (cx, cy) の周りに粒子を散らす（ガウス分布・決定論的乱数）。
+ * {@link buildScatterAroundTargets}（参照字形の bbox から半径を出す版）と
+ * {@link buildScatterAroundAnchor}（外部 DOM 要素の位置に固定サイズで着地する版）
+ * の共通実装。
+ *
+ * 【2026-07-08 一様充填 → ガウス分布に変更】旧実装は「半径 rx/ry 以内を体積
+ * 一様に充填し、それより外には 1 粒も置かない」方式だったため、雲の輪郭が
+ * くっきりした楕円（実質「丸」）に見えていた（凜さん 2026-07-08「一度円に
+ * なるのが変。やめて」「バラバラに拡散したまま移動（団まらない）」）。
+ * 各軸独立の正規分布（Box-Muller）に変えると、中心ほど密で外側ほど指数的に
+ * 疎らになる自然な減衰になり、「ここで粒子が終わる」という幾何学的な境界線が
+ * 消える＝輪郭のある形として認識されにくくなる。rx/ry/rz は「標準偏差」として
+ * 使う（旧実装の「充填半径」とは尺度が異なるため、呼び出し側の値をそのまま
+ * 使うと薄く広がりすぎる場合がある点に注意）。
+ */
+function distributeAroundPoint(
+  count: number,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  rz: number,
+  pattern: "random" | "fibonacci",
+): Float32Array {
+  const out = new Float32Array(count * 3);
+  // Box-Muller: 決定論的な一様乱数2つから標準正規乱数2つを作る。
+  const gaussianPair = (rnd: Random): [number, number] => {
+    const u1 = Math.max(rnd(), 1e-6); // log(0) 回避
+    const u2 = rnd();
+    const r = Math.sqrt(-2 * Math.log(u1));
+    return [r * Math.cos(2 * Math.PI * u2), r * Math.sin(2 * Math.PI * u2)];
+  };
+  for (let i = 0; i < count; i++) {
+    const rnd = pattern === "random" ? seededRandom(i + 1) : seededRandom(i + 1001);
+    const [gx, gy] = gaussianPair(rnd);
+    const [gz] = gaussianPair(rnd);
+    out[i * 3] = cx + gx * rx;
+    out[i * 3 + 1] = cy + gy * ry;
+    out[i * 3 + 2] = gz * rz;
+  }
+  return out;
+}
+
+/**
+ * `anchorSelector`（{@link import("../types.js").ScatterKeyframe.anchorSelector}）
+ * の実体。外部 DOM 要素の画面中心を world 座標へ変換し、そこへ固定サイズの
+ * 楕円体クラウドを着地させる（参照字形のバウンディングボックスは使わない —
+ * 別 canvas の要素なので粒子バッファを持たないため）。要素が見つからない/
+ * 計測不能なら null（呼び出し側が `around` の挙動へフォールバックする）。
+ */
+export function buildScatterAroundAnchor(
+  count: number,
+  spread: number,
+  selector: string,
+  ctx: { cameraFov: number; cameraZ: number; viewportW?: number; viewportH?: number; visW: number },
+  pattern: "random" | "fibonacci" = "fibonacci",
+): Float32Array | null {
+  const center = sampleAnchorCenterWorld({
+    selector,
+    fovDeg: ctx.cameraFov,
+    cameraZ: ctx.cameraZ,
+    ...(ctx.viewportW !== undefined ? { viewportW: ctx.viewportW } : {}),
+    ...(ctx.viewportH !== undefined ? { viewportH: ctx.viewportH } : {}),
+  });
+  if (!center) return null;
+  // buildScatterAroundTargets の上限クランプと同じ比率（2026-07-08 拡大後）
+  // に揃える。参照テキストの実際のサイズは分からない＝別 canvas の要素なので、
+  // 常にこのサイズで着地する。
+  const rx = ctx.visW * 0.08 * spread;
+  const ry = ctx.visW * 0.05 * spread;
+  const rz = 0.5 * spread;
+  return distributeAroundPoint(count, center.cx, center.cy, rx, ry, rz, pattern);
+}
+
+/**
+ * `around:"glyph"` の scatter が近傍の基準にする字形キーフレームの index を返す。
+ * 「これから形成する字形」を優先（後方で最初の formsGlyph）、無ければ
+ * 「直前まで形成していた字形」（前方で最後の formsGlyph）。どちらも無ければ -1。
+ */
+export function scatterGlyphRefIndex(
+  keyframes: Keyframe[],
+  index: number,
+): number {
+  for (let i = index + 1; i < keyframes.length; i++) {
+    if (formsGlyph(keyframes[i])) return i;
+  }
+  for (let i = index - 1; i >= 0; i--) {
+    if (formsGlyph(keyframes[i])) return i;
+  }
+  return -1;
 }
 
 /** {@link buildKeyframeTargets} が必要とする描画コンテキスト。 */
@@ -189,4 +366,80 @@ export function buildKeyframeTargets(
     ch: 560,
     step: 2,
   });
+}
+
+/**
+ * 連続する 2 つのキーフレームが「同一の字形」か（＝ターゲットバッファを共有してよいか）。
+ *
+ * text の form→hold の 2 連キーフレーム（同一テキスト・同一 domSelector）は同じ
+ * 字形のはずだが、独立にサンプリングすると粒子→ピクセルの割り当てが乱数で毎回
+ * 変わるため、保持区間で全粒子が「同じ字形の別の配置」へゆっくり泳ぎ直す。
+ * 見た目は「収束が終わったのにもう一度粒子が動いて再収束する」不具合になる
+ * （凜さん 2026-07-08「収束したと思ったらもう一回粒子が動いて、そっから収束する」）。
+ * 同一字形ならバッファを共有し、保持区間の移動距離を数学的にゼロにする。
+ */
+function sameGlyphKeyframe(a: Keyframe | undefined, b: Keyframe): boolean {
+  if (!a || a.type !== "text" || b.type !== "text") return false;
+  return (
+    a.text === b.text &&
+    a.domSelector === b.domSelector &&
+    a.font === b.font &&
+    a.worldW === b.worldW &&
+    a.offsetX === b.offsetX &&
+    a.offsetY === b.offsetY &&
+    a.dense === b.dense &&
+    a.segments === undefined &&
+    b.segments === undefined
+  );
+}
+
+/**
+ * キーフレーム列全体の位置ターゲットを一括生成する（2 パス）。
+ *
+ * `around:"glyph"` の scatter は「隣接する字形キーフレームのターゲット」を参照して
+ * 初めて位置が決まるため、1 キーフレームずつ独立に作る {@link buildKeyframeTargets}
+ * では表現できない。先に字形（と従来 scatter）を全部作り、その後で局所 scatter を
+ * 参照解決する。参照が取れない・退化している場合は従来の全面クラウドへ
+ * フォールバックする（真っ白/無配置にはしない）。
+ * 連続する同一字形キーフレームはバッファを共有する（{@link sameGlyphKeyframe}）。
+ */
+export function buildKeyframeTargetsList(
+  keyframes: Keyframe[],
+  count: number,
+  ctx: KeyframeBuildContext,
+): Float32Array[] {
+  const out: (Float32Array | null)[] = [];
+  keyframes.forEach((kf, i) => {
+    if (kf.type === "scatter" && (kf.around === "glyph" || kf.anchorSelector)) {
+      out.push(null);
+      return;
+    }
+    const prevBuf = out[i - 1];
+    if (prevBuf && sameGlyphKeyframe(keyframes[i - 1], kf)) {
+      out.push(prevBuf);
+      return;
+    }
+    out.push(buildKeyframeTargets(kf, count, ctx));
+  });
+  keyframes.forEach((kf, i) => {
+    if (out[i] !== null || kf.type !== "scatter") return;
+    // anchorSelector が最優先（別 canvas の実 DOM 位置への着地。types.ts の
+    // ScatterKeyframe.anchorSelector コメント参照）。取れなければ通常の
+    // around:"glyph"/"viewport" ロジックへフォールバックする。
+    const anchored = kf.anchorSelector
+      ? buildScatterAroundAnchor(count, kf.spread ?? 1, kf.anchorSelector, ctx, ctx.scatterPattern)
+      : null;
+    if (anchored) {
+      out[i] = anchored;
+      return;
+    }
+    const refIdx = scatterGlyphRefIndex(keyframes, i);
+    const ref = refIdx >= 0 ? (out[refIdx] ?? null) : null;
+    const local = ref
+      ? buildScatterAroundTargets(count, kf.spread ?? 1, ref, ctx.scatterPattern, ctx.visW)
+      : null;
+    out[i] =
+      local ?? buildScatter(count, kf.spread ?? 1, Math.random, ctx.scatterPattern);
+  });
+  return out as Float32Array[];
 }
