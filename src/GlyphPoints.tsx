@@ -233,7 +233,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
     // 途中の見出しでは「実テキストの裏に粒子が残って見える」ため、利用側が opacity を
     // 手で振り付けるしかなかった。それをライブラリの標準機能にする
     // （提案者: 凜さん 2026-07-04「テキストの裏にいるのが見える。そのまま使うようにしよう」）。
-    // 先頭グループは進捗 0 から実テキスト表示＝保持区間全体を使って粒子へ溶け出す。
+    // 先頭グループ（isStart）はフェードイン因子が常に1（進捗0から実テキスト
+    // 表示済みのため）。退場フェード窓 [c,d] は他グループと同じ式
+    // （c=t1-rise, d=t1）を使う（2026-07-10、下の a/c 計算コメント参照）。
     // 最終グループは立った実テキストがそのまま残る（従来の終端 resolve と同じ着地）。
     const windows: {
       selector: string;
@@ -317,6 +319,36 @@ export function GlyphPoints(props: GlyphPointsProps) {
         // （そちら側のコメント参照）。これで rise を安全に広げられるように
         // なったため、安定保持区間を十分残しつつ改善幅を確保する 32% を採用
         // （2*0.32+0.15=0.79、span に対して余裕あり）。
+        //
+        // 【2026-07-10 isStart の a/c 特例を撤廃 → plateau 長で揃える方式に
+        // 修正（提案者: 凜さん実機報告「LINNOの状態が長すぎる、次のテキストは
+        // 短すぎる」。一度 c=t1-rise に統一する修正を入れたが、それでも
+        // 「Being human is wanting things. の滞在時間がLINNOと比べてまだ
+        // 短い」と再指摘があり、根本的に式が違うことが判明）】
+        // isStart は amt 計算で最初の因子が常に 1（`w.isStart ? 1 : ...`）＝
+        // フェードイン不要（進捗0より前から既に実文字表示済みのため）。
+        // 中間駅は span の中に「rise（到着直後のフェードイン）＋ plateau
+        // （くっきり静止）＋ fall（退場フェードアウト）」の3つを収める必要が
+        // あり、rise が span の大半（2*44%=88%）を食うため plateau は
+        // desiredPlateau*shrink（span の約14.6%）まで圧縮される。
+        // isStart はこの rise が要らない分、c を t1-rise に置くと
+        // 「中間駅が rise+plateau に使う分すべて」を丸ごと plateau に
+        // 使うことになり、中間駅の plateau（span の約14.6%）よりずっと
+        // 長い静止時間になってしまう（これが c=t1-rise でも直らなかった
+        // 理由）。真に公平にするには、isStart の plateau 長そのものを
+        // 中間駅の plateau 長（minPlateau）に、fall 長を中間駅の fall 長
+        // （rise）に一致させる必要がある。c = t0 + minPlateau（rise 分を
+        // 待たずに、中間駅と同じ静止時間が経ったらすぐ退場を始める）、
+        // d = c + rise とする。
+        // 【対になる修正】このタイミング式が「そもそも LINNO だけ無駄な
+        // form フェーズ幅を持っている」根本原因も併せて修正: GlyphStageEngine.tsx
+        // の buildTiming と glyph-stage.ts の computeStationTimes で、
+        // hasLeadingMorph=false の駅0の FORM 重みを 0 にした（駅0は
+        // 「粒子が収束してくる」形成過程が存在せず＝最初から実文字表示済みの
+        // ため、形成フェーズに時間を割く意味がない）。二つの修正は独立だが、
+        // 片方だけでは体感時間は変わらない（後者が times[] 自体を圧縮し、
+        // 前者はその圧縮された times[] の中で他駅と同じ plateau/fall 長を
+        // 保証する）。
         const span = Math.max(t1 - t0, 0);
         const desiredRise = span > 0 ? span * 0.44 : 0.02;
         const desiredPlateau = span * 0.15;
@@ -327,14 +359,14 @@ export function GlyphPoints(props: GlyphPointsProps) {
         const minPlateau = Math.max(0, desiredPlateau * shrink);
         const staggerCatchUp = t0 + style.stagger * 0.5 * (1 - t0);
         const latestA = t1 - 2 * rise - minPlateau;
-        const a = gi === 0 ? t0 - rise * 0.4 : Math.min(staggerCatchUp, latestA);
+        const a = gi === 0 ? t0 : Math.min(staggerCatchUp, latestA);
+        const c = gi === 0 ? Math.min(t0 + minPlateau, t1 - rise) : t1 - rise;
         windows.push({
           selector: kf.domSelector,
           a,
           b: a + rise,
-          // 先頭グループは保持区間全体でゆっくり粒子へ受け渡す。
-          c: gi === 0 ? t0 : t1 - rise,
-          d: t1,
+          c,
+          d: c + rise,
           isStart: gi === 0,
           isFinal: gj === n - 1,
           holdResolved,
