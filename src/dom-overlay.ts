@@ -173,6 +173,41 @@ export function buildGlyphFromDOM(
     }
   }
 
+  // 【2026-07-09 発見・修正】呼び出し側が渡す `lines`（`text.split("\n")`）は
+  // 明示的な改行（<br/> 等）の区切りでしかなく、コンテナ幅（例: max-w-2xl）を
+  // 超えて CSS が自動折り返しした行は考慮されていなかった。この canvas は
+  // fillText で折り返しをせず 1 論理行 = 1 描画行として lineHeight 間隔で
+  // 積むため、実 DOM 側で自動折り返しが発生する文言（例: マニフェスト本文の
+  // 長い文）だと、粒子字形が実テキストより行数が少なく描画され、折り返された
+  // 後半部分の粒子が欠落・実文字とズレる不具合があった（凜さん 2026-07-09
+  // 「マニフェストの本文、全部粒子の旅から発生するものでないといけないのに
+  // 一部がそうじゃない」実機報告）。要素の実際の折り返し幅（elRect.width。
+  // パディング等を考慮せず要素ボックス幅をそのまま使う近似）に対して
+  // fillText と同じ font 設定で貪欲法の単語折り返しを行い、実 DOM の自動
+  // 折り返しを模倣した「本当の描画行」を作ってから積む。canvas の高さ
+  // （chCss、上の rect.height 由来）は Range 実測値なので既に折り返し後の
+  // 実サイズを反映しており、ここで行数が変わっても canvas 内に収まる。
+  const wrapWidth = Math.max(1, elRect.width);
+  const wrappedLines: string[] = [];
+  for (const line of lines) {
+    if (ctx.measureText(line).width <= wrapWidth) {
+      wrappedLines.push(line);
+      continue;
+    }
+    const words = line.split(" ");
+    let cur = "";
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w;
+      if (cur && ctx.measureText(test).width > wrapWidth) {
+        wrappedLines.push(cur);
+        cur = w;
+      } else {
+        cur = test;
+      }
+    }
+    if (cur) wrappedLines.push(cur);
+  }
+
   // ベースライン位置をブラウザの実描画に正確に合わせる。
   // Range.getBoundingClientRect が返す矩形は「字形ボックス」（fontAscent+fontDescent、
   // half-leading を含まない）— 実測で rect.height === fbAsc+fbDesc（Chrome）。
@@ -184,11 +219,11 @@ export function buildGlyphFromDOM(
   // 発見: 凜さん 2026-07-03「パーティクルとテキストがずれています」）。
   // フォントの実アセントは canvas の measureText から取得する
   // （近似 ascentRatio=0.82 では実フォントと数 px ずれ、DOM 整列が崩れるため）。
-  const fm = ctx.measureText(lines[0] ?? "M");
+  const fm = ctx.measureText(wrappedLines[0] ?? "M");
   const fbAsc = fm.fontBoundingBoxAscent;
   const useMetrics = Number.isFinite(fbAsc);
   const fallbackAscent = fontSize * (opts.ascentRatio ?? 0.82);
-  lines.forEach((line, i) => {
+  wrappedLines.forEach((line, i) => {
     const lineTop = i * lineHeight;
     const baseline = useMetrics
       ? lineTop + fbAsc
