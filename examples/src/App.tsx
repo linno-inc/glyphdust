@@ -35,15 +35,14 @@ const SWAP_AT = 0.54 * 0.15;
 export function App() {
   const headlineRef = useRef<HTMLHeadingElement>(null);
 
-  // 【品質向上 目視用の一時パネル】1 パラメータずつその場で切り替えて判定する。
-  // 既定値 = 現状（すべて 0.10.0 と数学的完全一致）。判定が出たらパネルは撤去する。
-  // - alphaVar: 質感（粒の透明度個体差）。dof は常に 0 のまま（明滅の原因のため）
-  // - wave: 溶解波（テキストが塊単位で粒子にばらけていく。凜さん依頼 2026-07-11）
-  // - stagger: ばらけの時間幅（大きいほど早く発つ粒と残る粒の差が開く。既定 0.08）
-  const [alphaVar, setAlphaVar] = useState(0);
-  const [wave, setWave] = useState(0);
+  // 【品質向上 調整パネル】初期値 = ライブラリ既定（2026-07-12 凜さん承認
+  // 「美しくする提案はもうデフォルトで全部入れて」→ alphaVar/dof/wave が
+  // リサーチ提案値で既定オン）。スライダーで個別に増減・ゼロ化できる。
+  const [alphaVar, setAlphaVar] = useState(0.55);
+  const [dof, setDof] = useState(0.5);
+  const [wave, setWave] = useState(0.75);
   const [stagger, setStagger] = useState(0.08);
-  // 導入3段階化のノブ（初期値 = 提案値。「現状に戻す」で従来の瞬時スワップに戻せる）
+  // 導入3段階化のノブ（凜さん承認済みの提案値）
   const [hold, setHold] = useState(0.16);
   const [swapFade, setSwapFade] = useState(0.06);
 
@@ -131,7 +130,7 @@ export function App() {
         // 純粋な補間移動）・インク単色（アクセント無し）・34,000粒・dpr上限3。
         // デモがプリセット既定（全部オン・11,000粒・dpr1.75）だったのが
         // 「拡散がスムーズじゃない」の残る差分だった。
-        style={{ drift: 0, sparkle: 0, curl: 0, burst: 0, alphaVar, wave, stagger }}
+        style={{ drift: 0, sparkle: 0, curl: 0, burst: 0, alphaVar, dof, wave, stagger }}
         dpr={[1, 3]}
         count={{ desktop: 34000, mobile: 18000 }}
         colors={{ ink: "#1b2330", accent: "#1b2330", accentRatio: 0 }}
@@ -163,15 +162,16 @@ export function App() {
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          品質向上 調整パネル（hold/swapFade は提案初期値入り）
+          品質向上 調整パネル（初期値 = 新しい既定・全部入り）
         </div>
         {(
           [
             ["静止保持 hold", hold, 0, 0.3, 0.01, setHold, "実テキストのまま保つ長さ＝拡散開始点（0=すぐ動き出す）"],
             ["入替幅 swapFade", swapFade, 0, 0.2, 0.01, setSwapFade, "動き出す瞬間の実文字→粒子クロスフェード幅（0=瞬時）"],
-            ["ばらけ波 wave", wave, 0, 1, 0.05, setWave, "0=一様にほどける / 1=塊単位で溶ける"],
-            ["ばらけ幅 stagger", stagger, 0, 0.4, 0.01, setStagger, "早く発つ粒と残る粒の時間差（現行 0.08）"],
-            ["質感 alphaVar", alphaVar, 0, 1, 0.05, setAlphaVar, "粒の透明度の個体差（dofは常に0）"],
+            ["ばらけ波 wave", wave, 0, 1, 0.05, setWave, "0=一様にほどける / 1=塊単位で溶ける（既定 0.75）"],
+            ["ばらけ幅 stagger", stagger, 0, 0.4, 0.01, setStagger, "早く発つ粒と残る粒の時間差（既定 0.08）"],
+            ["質感 alphaVar", alphaVar, 0, 1, 0.05, setAlphaVar, "粒の透明度の個体差（既定 0.55）"],
+            ["奥行き dof", dof, 0, 1, 0.05, setDof, "遠い粒のボケ（既定 0.5。明滅が気になれば 0 に）"],
           ] as const
         ).map(([label, value, min, max, step, set, hint]) => (
           <div key={label} style={{ marginBottom: 6 }}>
@@ -194,11 +194,12 @@ export function App() {
         <button
           type="button"
           onClick={() => {
-            setWave(0);
+            setWave(0.75);
             setStagger(0.08);
-            setAlphaVar(0);
-            setHold(0);
-            setSwapFade(0);
+            setAlphaVar(0.55);
+            setDof(0.5);
+            setHold(0.16);
+            setSwapFade(0.06);
           }}
           style={{
             border: "1px solid #4a5a7a",
@@ -209,7 +210,7 @@ export function App() {
             cursor: "pointer",
           }}
         >
-          現状に戻す
+          既定値に戻す
         </button>
       </div>
 
