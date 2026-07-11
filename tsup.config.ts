@@ -10,5 +10,6 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   // peerDependencies はバンドルせず外部化する（重複 three インスタンス回避）。
-  external: ["react", "react-dom", "three", "@react-three/fiber"],
+  // @react-three/postprocessing は optional peer（bloom 用・動的 import）。
+  external: ["react", "react-dom", "three", "@react-three/fiber", "@react-three/postprocessing"],
 });

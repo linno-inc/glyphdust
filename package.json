@@ -56,12 +56,15 @@
     "@react-three/fiber": ">=8",
     "react": ">=18",
     "react-dom": ">=18",
-    "three": ">=0.160"
+    "three": ">=0.160",
+    "@react-three/postprocessing": ">=3"
   },
   "devDependencies": {
     "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "@types/react": "^19.0.0",
     "@types/three": "^0.184.1",
+    "postprocessing": "^6.39.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.184.0",
@@ -73,5 +76,10 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependenciesMeta": {
+    "@react-three/postprocessing": {
+      "optional": true
+    }
   }
 }

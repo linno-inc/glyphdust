@@ -168,6 +168,38 @@ export function App() {
           </p>
         </div>
       </section>
+
+      {/* 光（bloom）デモ: 暗背景 + glow プリセット。きらめき粒・アクセント粒だけが
+          selective bloom で「内側から光る」（2026-07-11「光」の軸。粒子の
+          軌道・タイミングは一切不変のポスト処理のみ）。 */}
+      <section
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "8vw",
+          textAlign: "center",
+          background: "#070b14",
+        }}
+      >
+        <div>
+          <div style={{ width: "min(720px, 88vw)", height: 280, margin: "0 auto" }}>
+            <GlyphDust
+              driver={{ type: "autoplay", duration: 4, loop: true, pingpong: true }}
+              preset="glow"
+              keyframes={[
+                { type: "scatter", spread: 0.9 },
+                { type: "text", text: "magic", dense: true },
+              ]}
+              colors={{ ink: "#7fa8ff", accent: "#cfe0ff", accentRatio: 0.3 }}
+            />
+          </div>
+          <p style={{ marginTop: 16, opacity: 0.65, maxWidth: 640, color: "#8ea2c8" }}>
+            ↑ <code>preset="glow"</code> — selective bloom. Sparkle and accent
+            particles glow from within on dark backgrounds.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }

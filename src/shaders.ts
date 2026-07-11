@@ -316,6 +316,7 @@ export const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorInk;
   uniform vec3 uColorAccent;
   uniform float uSparkle;
+  uniform float uBloom;
 
   varying float vSeed;
   varying float vAccent;
@@ -349,6 +350,15 @@ export const FRAGMENT_SHADER = /* glsl */ `
     // 見えるため、脱彩度は意図的に vDof 由来のみに限定している。
     float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
     col = mix(col, vec3(lum), vDof * 0.35);
+
+    // 【2026-07-11 光（bloom）の HDR ブースト。提案者: Claude、凜さん指示
+    // 「収束拡散は元のまま提案を全て実装」】uBloom>0 のとき、きらめき粒と
+    // アクセント粒だけを輝度 1.0 超へ押し上げる。GlyphDust 側の Bloom
+    // （luminanceThreshold 0.85）がその粒だけを拾って発光させる selective 設計
+    // （React Postprocessing の推奨: threshold で選ばず素材の色を持ち上げる）。
+    // uBloom=0（既定。glow プリセット以外）では完全に不変。位置・タイミングは
+    // 一切触れない。
+    col *= 1.0 + uBloom * (0.5 + 1.6 * spark + 0.7 * accentAmt);
 
     // 奥行きで濃淡（明背景での視認性確保のため下限を持たせる）。
     float floorFade = mix(0.45, 0.78, vSettle);
