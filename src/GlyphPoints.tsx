@@ -797,10 +797,14 @@ export function GlyphPoints(props: GlyphPointsProps) {
           : 0;
     // 粒子の消失（フェードアウト）。
     let resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
-    // 実文字の出現（フェードイン）は粒子の消失より少し遅らせる。
-    // 同じカーブだと粒子と実文字が同時に重なり二重像になるため、
-    // 「粒子が消えてから文字が立つ」クリーンな受け渡しにする（0.92→1.0）。
-    let textReveal = timeline.hasResolve ? smooth(0.92, 1.0, raw) : 0;
+    // 実文字の出現は粒子の消失と同窓・相補のクロスフェード。
+    // 【2026-07-12 逐次→相補に変更（凜さん「もっとスムーズに粒子からテキスト」）】
+    // 旧: 実文字を 0.92→1.0 と少し遅らせていた（当時は粒子と実文字がずれて
+    // 二重像に見えたための回避策）。ずれの真因はオーバーレイ整列の viewport 基準
+    // ミス（スクロールバー分の右ズレ）で、修正済み（9e1a7fc）の今はピクセル
+    // 整列が保証されるため、導入側（swapFade クロスフェード）と同じ
+    // 「合計濃度ほぼ一定のまま粒子→実文字にモーフ」が成立する。
+    let textReveal = timeline.hasResolve ? resolve : 0;
 
     // ── 解決窓（per-keyframe resolveToDom）──
     // 窓があるときは、可視ゲート（swap）・粒子の溶解（resolve）・実テキストの
@@ -887,6 +891,10 @@ export function GlyphPoints(props: GlyphPointsProps) {
       const ownOverlay = resolveRef?.current ?? null;
       if (ownOverlay) {
         ownOverlay.style.opacity = String(textReveal);
+        // 滲み→ピントの軽い blur（解決窓・導入クロスフェードと同じ表現。
+        // filter は常に blur() を設定したままにし値だけ 0 へ近づける —
+        // on/off 切替は描画パイプライン切替のちらつきを生む。0.9.x の教訓）。
+        ownOverlay.style.filter = `blur(${((1 - textReveal) * 2.5).toFixed(2)}px)`;
       } else if (resolveDomSelector && timeline.windows.length === 0) {
         if (!resolveDomElRef.current || !resolveDomElRef.current.isConnected) {
           resolveDomElRef.current =
