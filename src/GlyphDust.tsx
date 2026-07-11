@@ -132,6 +132,7 @@ export function GlyphDust(props: GlyphDustProps) {
     camera,
     timing,
     swapFade,
+    swapAt,
     fallback = null,
     className,
     resampleSignal,
@@ -320,6 +321,7 @@ export function GlyphDust(props: GlyphDustProps) {
           getProgress={getProgress}
           timing={timing}
           swapFade={swapFade}
+          swapAt={swapAt}
           resolveRef={useOwnOverlay ? resolveRef : undefined}
           resolveDomSelector={resolveDomSelector}
           resampleSignal={resampleSignal}

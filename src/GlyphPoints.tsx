@@ -105,6 +105,8 @@ export interface GlyphPointsProps {
   timing?: number[] | undefined;
   /** 粒子の出現をフェードインにする進捗幅。既定 0（瞬時切替）。GlyphDustProps 参照。 */
   swapFade?: number | undefined;
+  /** 粒子が現れる進捗点の上書き。既定は内部値 times[1]*0.15。GlyphDustProps 参照。 */
+  swapAt?: number | undefined;
   /** resolveToDom 用の実文字オーバーレイ要素。 */
   resolveRef?: RefObject<HTMLDivElement | null> | undefined;
   /**
@@ -132,6 +134,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     getProgress,
     timing,
     swapFade,
+    swapAt: swapAtProp,
     resolveRef,
     resolveDomSelector,
     resampleSignal,
@@ -778,10 +781,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
     // swapFade > 0 なら瞬時切替の代わりに swap 点から swapFade 幅で滑らかに立ち上げる
     // （凜さん 2026-07-11「スッと消えて→凝縮したテキストの形→拡散、をスムーズに」。
     // 既定 0 は従来どおりの瞬時切替＝挙動不変）。
+    // swapAt プロップで出現点を上書きできる（凜さん 2026-07-12「テキストと粒子の
+    // ズレをなくせばいい」→ 拡散開始点に合わせると静止中の粒子/実文字の併存が消える）。
+    const swapAt = swapAtProp ?? timeline.swapAt;
     let swapped =
       swapFade && swapFade > 0
-        ? smooth(timeline.swapAt, timeline.swapAt + swapFade, raw)
-        : raw >= timeline.swapAt
+        ? smooth(swapAt, swapAt + swapFade, raw)
+        : raw >= swapAt
           ? 1
           : 0;
     // 粒子の消失（フェードアウト）。
