@@ -2,7 +2,13 @@ import { useEffect, useRef } from "react";
 import Lenis from "lenis";
 import { GlyphDust } from "glyphdust";
 
-const TRIGGER_HEIGHT = 2.4;
+// 【2026-07-11 本番ペーシングに一致】従来の 2.4（全行程140vh）は本番 LINNO サイト
+// （1駅あたり 132vh×1.95≈257vh、凜さんが実機で2度「短すぎる」と伸ばして調整した値）
+// の約5倍速で、拡散が一瞬で駆け抜けて「スムーズじゃない」と知覚されていた
+// （凜さん 2026-07-11。ライブラリを 0.10.0 と数学的同一に戻しても「変わってない」
+// ことから、原因はライブラリではなくデモのスクロール設計と確定）。
+// 2駅 × 257vh ≈ 515vh → triggerHeight = 1 + 5.15 ≈ 6.2。
+const TRIGGER_HEIGHT = 6.2;
 const SWAP_AT = 0.08; // 粒子が現れる点。ここで DOM 見出しを即・非表示にする。
 
 /**
@@ -69,6 +75,10 @@ export function App() {
           { type: "scatter", spread: 1 },
           { type: "text", text: "LINNO", dense: true, resolveToDom: true },
         ]}
+        // 本番と同じ軌道形状: 既定 [0, 0.33, 0.85] は 0.33 から集まり始め
+        // 「中央にじわっと」になる。本番は scatter を広く保持し 0.52→0.84 で
+        // LINNO へ収束する（GlyphDustHero.tsx の検証結果と同じ値）。
+        timing={[0, 0.52, 0.84]}
         driver={{ type: "scroll", triggerHeight: TRIGGER_HEIGHT }}
         colors={{ ink: "#1b2330", accent: "#0055ff", accentRatio: 0.18 }}
         fallback={
