@@ -61,19 +61,21 @@ const DEFAULT_DPR: [number, number] = [1, 1.75];
 /** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
 const SMOOTH = "smootherstep" as const;
 const FIB = "fibonacci" as const;
-// alphaVar / dof（2026-07-11 品質向上 Phase 1）は全プリセットで既定 0 の opt-in。
-// 当初は既定オンだったが、dof は飛散中の粒のサイズ・ボケ・彩度を移動と連動して
-// 毎フレーム変調し、alphaVar は拡散の途中で粒群の質感を変えるため、凜さんが
-// 「拡散がスムーズじゃない」と却下（2026-07-11。既定の拡散・収束は 0.10.0 と
-// ピクセル一致であること、質感は style での明示指定のみ）。
-// bloom は「光」の軸（凜さん指示「収束拡散は元のまま提案を全て実装」）。
-// ポスト処理のみで粒子の軌道・タイミングは不変。発光は暗背景向けなので glow プリセット
-// だけ既定オン。モバイルは負荷対策で自動オフ（uBloom ブーストも 0 に畳む）。
+// alphaVar / dof / wave（品質向上「美しすぎて魔法」提案）は既定オン。
+// 経緯: 2026-07-11 に一度既定オン→凜さんが「拡散がスムーズじゃない」と却下→全て
+// 既定0の opt-in 化 → 2026-07-12 に導入・収束のスムーズ化（クロスフェード対称化・
+// ズレ解消・時差ゼロ化）が完了した上で、凜さんが「美しくする提案はもうデフォルトで
+// 全部入れて。拡散と収束はもうオッケー」と承認し、リサーチ提案時の値へ復帰
+//（提案者: 凜さん 2026-07-12。値は 3ef748d/b3ad3a7 の診断値）。
+// overshoot（余韻）だけは「行き過ぎて戻る」＝収束の動き自体を変えるため、
+// 「拡散と収束はもうオッケー（＝動きは変えない）」に従い既定に入れていない。
+// bloom は「光」の軸。ポスト処理のみで粒子の軌道・タイミングは不変。発光は暗背景
+// 向けなので glow プリセットだけ既定オン。モバイルは負荷対策で自動オフ。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0.6 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5, wave: 0.75, bloom: 0 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0, wave: 0.4, bloom: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7, wave: 0.9, bloom: 0 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6, wave: 0.8, bloom: 0.6 },
 };
 
 function clamp01(x: number): number {
