@@ -103,6 +103,8 @@ export interface GlyphPointsProps {
   getProgress: () => number;
   /** 各キーフレームの正規化時刻（省略時は等間隔）。 */
   timing?: number[] | undefined;
+  /** 粒子の出現をフェードインにする進捗幅。既定 0（瞬時切替）。GlyphDustProps 参照。 */
+  swapFade?: number | undefined;
   /** resolveToDom 用の実文字オーバーレイ要素。 */
   resolveRef?: RefObject<HTMLDivElement | null> | undefined;
   /**
@@ -129,6 +131,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     cameraFov,
     getProgress,
     timing,
+    swapFade,
     resolveRef,
     resolveDomSelector,
     resampleSignal,
@@ -772,7 +775,15 @@ export function GlyphPoints(props: GlyphPointsProps) {
       const formStart = 1 - smooth(times[0] ?? 0, times[1] ?? 1, s);
       form = Math.max(form, formStart);
     }
-    let swapped = raw >= timeline.swapAt ? 1 : 0;
+    // swapFade > 0 なら瞬時切替の代わりに swap 点から swapFade 幅で滑らかに立ち上げる
+    // （凜さん 2026-07-11「スッと消えて→凝縮したテキストの形→拡散、をスムーズに」。
+    // 既定 0 は従来どおりの瞬時切替＝挙動不変）。
+    let swapped =
+      swapFade && swapFade > 0
+        ? smooth(timeline.swapAt, timeline.swapAt + swapFade, raw)
+        : raw >= timeline.swapAt
+          ? 1
+          : 0;
     // 粒子の消失（フェードアウト）。
     let resolve = timeline.hasResolve ? smooth(0.9, 0.98, raw) : 0;
     // 実文字の出現（フェードイン）は粒子の消失より少し遅らせる。
