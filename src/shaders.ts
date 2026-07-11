@@ -27,6 +27,9 @@
  *  - `uReduced`      … 0/1 reduced-motion
  *  - `uSize`         … 基準点サイズ
  *  - `uPixelRatio`   … dpr
+ *  - `uAlphaVar`     … 0..1 粒子ごとの透明度ばらつき強度（飛散中のみ・整列時は畳む）
+ *  - `uDof`          … 0..1 擬似被写界深度の強さ（フォーカス面から離れた粒をボカす）
+ *  - `uFocus`        … フォーカス面のカメラ距離（= camera.z。テキストは z=0 平面）
  *
  * uniform（フラグメント）:
  *  - `uColorInk` / `uColorAccent` … 配色
@@ -89,6 +92,9 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uCurl;
   uniform float uSmoother;
   uniform float uPixelRatio;
+  uniform float uAlphaVar;
+  uniform float uDof;
+  uniform float uFocus;
 
 ${attributeDecls}
   attribute float aSeed;
@@ -100,6 +106,8 @@ ${attributeDecls}
   varying float vForm;
   varying float vAlpha;
   varying float vSettle;
+  varying float vAlphaVar;
+  varying float vDof;
 
   // smoothstep(C1) と Perlin 2002 の smootherstep(C2) を uSmoother で切替（比較用）。
   // smootherstep は端点で 1 次・2 次微分が 0＝加速度が滑らか（最小躍度・人の手の動き）。
@@ -239,6 +247,19 @@ ${mixChain}
     vDepth = -mvPosition.z;
     gl_Position = projectionMatrix * mvPosition;
 
+    // --- 質感の深み（2026-07-11 品質向上 Phase 1。提案者: Claude、凜さん承認） ---
+    // 整列・字形時（hold）は両効果とも 0 に畳む: DOM ピクセル一致と可読性の
+    // 既存保証（settle/form まわりの一連の修正）を壊さないための必須条件。
+    float hold = max(uSettle, uForm);
+    // 粒子ごとの透明度ばらつき。サイズ・きらめきと相関しないよう aSeed を
+    // ハッシュで脱相関してから使う（同じ粒が常に「大きくて明るくて濃い」に
+    // ならないように）。飛散中のみ有効で、浮遊感・奥行き感を作る。
+    float hashA = fract(aSeed * 43758.5453);
+    vAlphaVar = mix(1.0, 0.45 + 0.55 * hashA, uAlphaVar * (1.0 - hold));
+    // 擬似被写界深度: フォーカス面（テキストの z=0 平面 = カメラ距離 uFocus）
+    // から離れた粒ほどボケる。整列した文字はフォーカス面上なので影響ゼロ。
+    vDof = clamp(abs(vDepth - uFocus) * 0.45, 0.0, 1.0) * uDof * (1.0 - hold);
+
     // --- 透明度: スワップ点まで不可視、スワップ点で即・不透明（フェード無し）。 ---
     // DOM 見出しと同位置・同サイズで一致しているため、瞬時の切替が「文字→粒子」に見える。
     // フィナーレ(uResolve)で粒子を素早く消し、実 DOM 文字へ受け渡す。
@@ -279,6 +300,10 @@ ${mixChain}
     // 「収束後に薄くなる」不具合の修正が効かなかった。上限自体もモバイルの
     // ボコボコ対策で 5.5→4.6 に抑える。
     gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 4.2, max(uForm, uSettle)) * uPixelRatio * max(uSizeScale, 1.0));
+    // ボケた粒はレンズのボケ円のように少し大きく（clamp の後に掛ける:
+    // 上限は「整列した文字の粒」を守るためのもので、ボケ粒はフォーカス面から
+    // 離れた飛散中の粒に限られる）。フラグメント側でエッジを軟らかく・薄くする。
+    gl_PointSize *= 1.0 + vDof * 0.5;
   }
 `;
 }
@@ -298,12 +323,16 @@ export const FRAGMENT_SHADER = /* glsl */ `
   varying float vForm;
   varying float vAlpha;
   varying float vSettle;
+  varying float vAlphaVar;
+  varying float vDof;
 
   void main() {
     // 円形のソフトな点。中心で 1、縁で 0（smoothstep は edge0<edge1 必須なので反転して使う）。
+    // ボケ粒（vDof）は芯の半径を 0 まで潰し、全体がガウス状の柔らかい円になる
+    // （2026-07-11 品質向上 Phase 1: レンズのボケ円。提案者: Claude、凜さん承認）。
     vec2 uv = gl_PointCoord - 0.5;
     float r = length(uv);
-    float alpha = 1.0 - smoothstep(0.12, 0.5, r);
+    float alpha = 1.0 - smoothstep(mix(0.12, 0.0, vDof), 0.5, r);
     if (alpha < 0.02) discard;
 
     // 主体はインク、一部の粒だけアクセント色。字形収束時はやや控えめに。
@@ -314,6 +343,13 @@ export const FRAGMENT_SHADER = /* glsl */ `
     float spark = step(0.94, vSeed);
     col = mix(col, uColorAccent, spark * mix(0.45, 0.15, vSettle) * uSparkle);
 
+    // ボケ粒はわずかに脱彩度（輝度へ寄せる）: 遠景が霞む大気遠近の効果で
+    // 奥行きの「層」が生まれる。整列時は vDof=0 なので文字の色は不変。
+    // resolve（実 DOM 文字とのクロスフェード）中に色を動かすと二重像に
+    // 見えるため、脱彩度は意図的に vDof 由来のみに限定している。
+    float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(col, vec3(lum), vDof * 0.35);
+
     // 奥行きで濃淡（明背景での視認性確保のため下限を持たせる）。
     float floorFade = mix(0.45, 0.78, vSettle);
     float depthFade = clamp(1.0 - (vDepth - 3.0) * 0.10, floorFade, 1.0);
@@ -323,7 +359,9 @@ export const FRAGMENT_SHADER = /* glsl */ `
     // 参照。精密な字形に収束した粒子がストローク幅の減少分だけ薄く見える
     // 現象を打ち消す（モバイル実機のボコボコ対策で当初の2.2から控えめに
     // 戻した）。
-    float a = alpha * depthFade * vAlpha;
+    // vAlphaVar = 粒子ごとの透明度個体差（飛散中のみ、整列時は 1 に畳まれる）。
+    // ボケ粒は面積が増えた分 (1 - vDof*0.35) で減光しエネルギーを保存する。
+    float a = alpha * depthFade * vAlpha * vAlphaVar * (1.0 - vDof * 0.35);
     a = mix(a, clamp(a * 1.35, 0.0, 1.0), vSettle);
 
     gl_FragColor = vec4(col, a);

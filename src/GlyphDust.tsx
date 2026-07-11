@@ -26,11 +26,14 @@ const DEFAULT_DPR: [number, number] = [1, 1.75];
 /** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
 const SMOOTH = "smootherstep" as const;
 const FIB = "fibonacci" as const;
+// alphaVar / dof は 2026-07-11 品質向上 Phase 1 で追加（提案者: Claude、凜さん承認。
+// 世界水準の粒子演出リサーチより: 粒子ごとの透明度個体差＝浮遊感、擬似被写界深度＝
+// 奥行きの層。どちらも整列時はシェーダ側で 0 に畳まれ、文字の可読性・ピクセル一致は不変）。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6 },
 };
 
 function clamp01(x: number): number {
@@ -198,6 +201,8 @@ export function GlyphDust(props: GlyphDustProps) {
       easing: style?.easing ?? base.easing,
       scatterPattern: style?.scatterPattern ?? base.scatterPattern,
       burst: style?.burst ?? base.burst,
+      alphaVar: style?.alphaVar ?? base.alphaVar,
+      dof: style?.dof ?? base.dof,
     };
   }, [
     preset,
@@ -210,6 +215,8 @@ export function GlyphDust(props: GlyphDustProps) {
     style?.easing,
     style?.scatterPattern,
     style?.burst,
+    style?.alphaVar,
+    style?.dof,
   ]);
 
   const resolvedColors = useMemo<ResolvedColors>(

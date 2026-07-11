@@ -52,6 +52,8 @@ export interface ResolvedStyle {
   easing: "smoothstep" | "smootherstep";
   scatterPattern: "random" | "fibonacci";
   burst: number;
+  alphaVar: number;
+  dof: number;
 }
 
 /**
@@ -81,6 +83,9 @@ interface GlyphUniforms {
   uPixelRatio: THREE.IUniform<number>;
   uColorInk: THREE.IUniform<THREE.Color>;
   uColorAccent: THREE.IUniform<THREE.Color>;
+  uAlphaVar: THREE.IUniform<number>;
+  uDof: THREE.IUniform<number>;
+  uFocus: THREE.IUniform<number>;
 }
 
 /** GlyphPoints が解決済みで受け取る設定。 */
@@ -442,6 +447,9 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uPixelRatio: { value: 1 },
       uColorInk: { value: colors.ink.clone() },
       uColorAccent: { value: colors.accent.clone() },
+      uAlphaVar: { value: style.alphaVar },
+      uDof: { value: style.dof },
+      uFocus: { value: cameraZ },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [vertexShader],
@@ -674,12 +682,15 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uCurl.value = isMobile() ? 0 : style.curl;
     u.uSmoother.value = style.easing === "smoothstep" ? 0 : 1;
     u.uSparkle.value = style.sparkle;
+    u.uAlphaVar.value = style.alphaVar;
+    u.uDof.value = style.dof;
+    u.uFocus.value = cameraZ;
     mat.blending =
       style.blend === "additive"
         ? THREE.AdditiveBlending
         : THREE.NormalBlending;
     mat.needsUpdate = true;
-  }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend]);
+  }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend, style.alphaVar, style.dof, cameraZ]);
 
   useFrame((state) => {
     const p = pointsRef.current;
