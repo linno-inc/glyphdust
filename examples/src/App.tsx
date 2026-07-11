@@ -22,7 +22,7 @@ const TRIGGER_HEIGHT = 6.2;
 //    ＝「crisp な文字が、飛び立つ粒子に変わりながらほどけていく」
 //  収束側（動きが終わる瞬間に実テキストへ解決）の正確な鏡像。
 // SWAP_AT はライブラリ既定の swapAt = times[1] * 0.15（hold=0 のリセット時に使う）。
-const SWAP_AT = 0.52 * 0.15;
+const SWAP_AT = 0.54 * 0.15;
 
 /**
  * glyphdust デモ。LINNO ヒーロー演出を再現:
@@ -116,7 +116,12 @@ export function App() {
         // LINNO へ収束する（GlyphDustHero.tsx の検証結果と同じ値）。
         // timing[0]=hold: 粒子は hold まで「凝縮したテキストの形」で完全静止し、
         // そこから初めて拡散が始まる（導入3段階化。スワップ時に既に動いている段差を解消）。
-        timing={[hold, 0.52, 0.84]}
+        // timing[2]=0.88: 実テキストへの解決は 0.90 から始まる（ライブラリの終端カーブ）。
+        // 旧 0.84 だと収束完了 0.84→解決開始 0.90 の間に「何も起きない待ち」が
+        // 約6%あり時差として知覚された（凜さん 2026-07-12「収束してからテキストに
+        // なるまでちょっと時差がある」）。到着を 0.88 に寄せ、stagger の遅参粒子が
+        // 落ち着く頃（≈0.89）に即クロスフェードが始まる連続した流れにする。
+        timing={[hold, 0.54, 0.88]}
         swapFade={swapFade}
         swapAt={hold > 0 ? hold : undefined}
         driver={{ type: "scroll", triggerHeight: TRIGGER_HEIGHT }}
