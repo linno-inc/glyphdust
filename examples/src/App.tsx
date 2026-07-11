@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Lenis from "lenis";
 import { GlyphDust } from "glyphdust";
 
@@ -21,8 +21,9 @@ const TRIGGER_HEIGHT = 6.2;
 //    同窓・同カーブ（smootherstep）の相補クロスフェードで行う
 //    ＝「crisp な文字が、飛び立つ粒子に変わりながらほどけていく」
 //  収束側（動きが終わる瞬間に実テキストへ解決）の正確な鏡像。
-// SWAP_AT はライブラリ既定の swapAt = times[1] * 0.15（hold=0 のリセット時に使う）。
-const SWAP_AT = 0.54 * 0.15;
+// HOLD/SWAP_FADE は凜さん目視承認済みの確定値（2026-07-12「問題ないですよ」）。
+const HOLD = 0.16; // 実テキストのまま保つ長さ＝拡散開始点（timing[0] と swapAt に使う）
+const SWAP_FADE = 0.06; // 動き出す瞬間の実文字→粒子クロスフェード幅
 
 /**
  * glyphdust デモ。LINNO ヒーロー演出を再現:
@@ -34,17 +35,6 @@ const SWAP_AT = 0.54 * 0.15;
  */
 export function App() {
   const headlineRef = useRef<HTMLHeadingElement>(null);
-
-  // 【品質向上 調整パネル】初期値 = ライブラリ既定（2026-07-12 凜さん承認
-  // 「美しくする提案はもうデフォルトで全部入れて」→ alphaVar/dof/wave が
-  // リサーチ提案値で既定オン）。スライダーで個別に増減・ゼロ化できる。
-  const [alphaVar, setAlphaVar] = useState(0.55);
-  const [dof, setDof] = useState(0.5);
-  const [wave, setWave] = useState(0.75);
-  const [stagger, setStagger] = useState(0.08);
-  // 導入3段階化のノブ（凜さん承認済みの提案値）
-  const [hold, setHold] = useState(0.16);
-  const [swapFade, setSwapFade] = useState(0.06);
 
   // 慣性スクロール（Lenis）。本番 LINNO サイトと同じ設定。
   // なぜ必要か: 素のホイールスクロールは一段ごとに scrollY が離散ジャンプし、
@@ -81,13 +71,7 @@ export function App() {
       if (!el) return;
       const total = (TRIGGER_HEIGHT - 1) * window.innerHeight;
       const p = total > 0 ? window.scrollY / total : 0;
-      const at = hold > 0 ? hold : SWAP_AT;
-      const t =
-        swapFade > 0
-          ? Math.min(1, Math.max(0, (p - at) / swapFade))
-          : p >= at
-            ? 1
-            : 0;
+      const t = Math.min(1, Math.max(0, (p - HOLD) / SWAP_FADE));
       const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep（ライブラリと同カーブ）
       el.style.opacity = String(1 - s);
       el.style.filter = `blur(${(s * 2.5).toFixed(2)}px)`;
@@ -100,7 +84,7 @@ export function App() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [swapFade, hold]);
+  }, []);
 
   return (
     <main>
@@ -120,9 +104,9 @@ export function App() {
         // 遅参粒子（stagger 分 ≈0.908 まで）は固まりつつある文字に滑り込む＝待ち時間ゼロ。
         // 経緯: 0.84（無イベント6%の時差）→0.88（凜さん「時差がある」）→0.90
         // （凜さん 2026-07-12「もっと差を縮めて」）。
-        timing={[hold, 0.54, 0.9]}
-        swapFade={swapFade}
-        swapAt={hold > 0 ? hold : undefined}
+        timing={[HOLD, 0.54, 0.9]}
+        swapFade={SWAP_FADE}
+        swapAt={HOLD}
         driver={{ type: "scroll", triggerHeight: TRIGGER_HEIGHT }}
         // 【2026-07-11 本番 GlyphStageEngine と完全一致】凜さんの「元々良かった」
         // 体感の実体は、プリセット既定ではなく本番の削ぎ落とした構成:
@@ -130,7 +114,8 @@ export function App() {
         // 純粋な補間移動）・インク単色（アクセント無し）・34,000粒・dpr上限3。
         // デモがプリセット既定（全部オン・11,000粒・dpr1.75）だったのが
         // 「拡散がスムーズじゃない」の残る差分だった。
-        style={{ drift: 0, sparkle: 0, curl: 0, burst: 0, alphaVar, dof, wave, stagger }}
+        // alphaVar/dof/wave はライブラリ既定（0.55/0.5/0.75、凜さん承認 2026-07-12）を使う。
+        style={{ drift: 0, sparkle: 0, curl: 0, burst: 0 }}
         dpr={[1, 3]}
         count={{ desktop: 34000, mobile: 18000 }}
         colors={{ ink: "#1b2330", accent: "#1b2330", accentRatio: 0 }}
@@ -142,77 +127,6 @@ export function App() {
           </h1>
         }
       />
-
-      {/* 【品質向上 目視用】調整パネル（判定後に撤去する一時 UI）。 */}
-      <div
-        style={{
-          position: "fixed",
-          right: 16,
-          bottom: 16,
-          zIndex: 10,
-          background: "rgba(20, 26, 40, 0.88)",
-          color: "#dbe4f5",
-          borderRadius: 10,
-          padding: "10px 14px",
-          fontSize: 13,
-          lineHeight: 1.5,
-          fontFamily: "system-ui, sans-serif",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
-          userSelect: "none",
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          品質向上 調整パネル（初期値 = 新しい既定・全部入り）
-        </div>
-        {(
-          [
-            ["静止保持 hold", hold, 0, 0.3, 0.01, setHold, "実テキストのまま保つ長さ＝拡散開始点（0=すぐ動き出す）"],
-            ["入替幅 swapFade", swapFade, 0, 0.2, 0.01, setSwapFade, "動き出す瞬間の実文字→粒子クロスフェード幅（0=瞬時）"],
-            ["ばらけ波 wave", wave, 0, 1, 0.05, setWave, "0=一様にほどける / 1=塊単位で溶ける（既定 0.75）"],
-            ["ばらけ幅 stagger", stagger, 0, 0.4, 0.01, setStagger, "早く発つ粒と残る粒の時間差（既定 0.08）"],
-            ["質感 alphaVar", alphaVar, 0, 1, 0.05, setAlphaVar, "粒の透明度の個体差（既定 0.55）"],
-            ["奥行き dof", dof, 0, 1, 0.05, setDof, "遠い粒のボケ（既定 0.5。明滅が気になれば 0 に）"],
-          ] as const
-        ).map(([label, value, min, max, step, set, hint]) => (
-          <div key={label} style={{ marginBottom: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ minWidth: 118 }}>{label}</span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={value}
-                onChange={(e) => set(Number(e.target.value))}
-                style={{ width: 150 }}
-              />
-              <code style={{ minWidth: 34, textAlign: "right" }}>{value.toFixed(2)}</code>
-            </div>
-            <div style={{ opacity: 0.6, fontSize: 11, marginLeft: 126 }}>{hint}</div>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => {
-            setWave(0.75);
-            setStagger(0.08);
-            setAlphaVar(0.55);
-            setDof(0.5);
-            setHold(0.16);
-            setSwapFade(0.06);
-          }}
-          style={{
-            border: "1px solid #4a5a7a",
-            background: "transparent",
-            color: "#dbe4f5",
-            borderRadius: 6,
-            padding: "2px 10px",
-            cursor: "pointer",
-          }}
-        >
-          既定値に戻す
-        </button>
-      </div>
 
       {/* domSelector で粒子が重なる実見出し（演出開始時に表示→swapで非表示）。 */}
       <h1

@@ -1,6 +1,6 @@
 {
   "name": "glyphdust",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Text → particles → glyph → real-text resolve. One React-three-fiber component: <GlyphDust>.",
   "type": "module",
   "license": "MIT",
