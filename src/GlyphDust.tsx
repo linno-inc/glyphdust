@@ -26,20 +26,11 @@ const DEFAULT_DPR: [number, number] = [1, 1.75];
 /** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
 const SMOOTH = "smootherstep" as const;
 const FIB = "fibonacci" as const;
-// alphaVar / dof は 2026-07-11 品質向上 Phase 1、wave / overshoot は同 Phase 2 で追加
-// （提案者: Claude、凜さん承認。世界水準の粒子演出リサーチより:
-//   alphaVar=透明度の個体差（浮遊感）、dof=擬似被写界深度（奥行きの層）、
-//   wave=stagger の空間相関（風が撫でるように塊で溶ける）、
-//   overshoot=到着直前の follow-through（行き過ぎて戻る余韻）。
-//   いずれも整列時はシェーダ側で畳まれ、文字の可読性・ピクセル一致は不変）。
-// overshoot の既定は 0（オプトイン）: 収束の厳密な単調性を既定で保つため
-// （凜さん 2026-07-11 実機報告「拡散と収束がスムーズじゃなくなった」を受けて
-// 0.35→0 に変更。行き過ぎ→戻りの余韻はスクラブ操作と相性が悪い場合がある）。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5, wave: 0.65, overshoot: 0 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0, wave: 0.4, overshoot: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7, wave: 0.85, overshoot: 0.3 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6, wave: 0.7, overshoot: 0 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1 },
 };
 
 function clamp01(x: number): number {
@@ -207,10 +198,6 @@ export function GlyphDust(props: GlyphDustProps) {
       easing: style?.easing ?? base.easing,
       scatterPattern: style?.scatterPattern ?? base.scatterPattern,
       burst: style?.burst ?? base.burst,
-      alphaVar: style?.alphaVar ?? base.alphaVar,
-      dof: style?.dof ?? base.dof,
-      wave: style?.wave ?? base.wave,
-      overshoot: style?.overshoot ?? base.overshoot,
     };
   }, [
     preset,
@@ -223,10 +210,6 @@ export function GlyphDust(props: GlyphDustProps) {
     style?.easing,
     style?.scatterPattern,
     style?.burst,
-    style?.alphaVar,
-    style?.dof,
-    style?.wave,
-    style?.overshoot,
   ]);
 
   const resolvedColors = useMemo<ResolvedColors>(

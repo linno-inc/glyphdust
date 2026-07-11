@@ -27,11 +27,6 @@
  *  - `uReduced`      … 0/1 reduced-motion
  *  - `uSize`         … 基準点サイズ
  *  - `uPixelRatio`   … dpr
- *  - `uAlphaVar`     … 0..1 粒子ごとの透明度ばらつき強度（飛散中のみ・整列時は畳む）
- *  - `uDof`          … 0..1 擬似被写界深度の強さ（フォーカス面から離れた粒をボカす）
- *  - `uFocus`        … フォーカス面のカメラ距離（= camera.z。テキストは z=0 平面）
- *  - `uWave`         … 0..1 stagger の空間相関度（0=独立ランダム、1=ノイズ場の波）
- *  - `uOvershoot`    … 0..1 到着直前の follow-through（行き過ぎて戻る余韻）の強さ
  *
  * uniform（フラグメント）:
  *  - `uColorInk` / `uColorAccent` … 配色
@@ -68,22 +63,12 @@ export function buildVertexShader(keyframeCount: number): string {
   ).join("\n");
 
   // 隣接キーフレームの mix 連鎖（アンロール）。N==1 のときは補間なし。
-  // 【2026-07-11 Phase 2】mix 連鎖を関数 posAt(sp) に切り出し、2 回サンプリング
-  // できるようにした: ①stagger 抜きの素の進捗で「粒子の概略位置」を求め、そこで
-  // 空間ノイズ場（波）を引く ②波でずらした進捗で本来の位置を求める。
-  // mix 連鎖は数個の mix なので 2 回評価しても安価（提案者: Claude、凜さん承認）。
+  // 進捗は per-particle stagger 済みの `stageP` を使う（粒子ごとに到達タイミングをずらす）。
   const mixChain = Array.from(
     { length: keyframeCount - 1 },
     (_, k) =>
-      `    p = mix(p, ${glyphPositionAttribute(k + 1)}, ` +
-      `smoothRange(uTimes[${k}], uTimes[${k + 1}], sp));`,
-  ).join("\n");
-
-  // 現在の補間区間の「出発キーフレーム時刻」（uStage 以下で最大の uTimes[k]）を
-  // 選ぶチェーン（アンロール）。波ノイズの参照点を区間内で固定するために使う。
-  const departChain = Array.from(
-    { length: keyframeCount - 1 },
-    (_, k) => `    tDep = mix(tDep, uTimes[${k + 1}], step(uTimes[${k + 1}], uStage));`,
+      `    pos = mix(pos, ${glyphPositionAttribute(k + 1)}, ` +
+      `smoothRange(uTimes[${k}], uTimes[${k + 1}], stageP));`,
   ).join("\n");
 
   return /* glsl */ `
@@ -104,11 +89,6 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uCurl;
   uniform float uSmoother;
   uniform float uPixelRatio;
-  uniform float uAlphaVar;
-  uniform float uDof;
-  uniform float uFocus;
-  uniform float uWave;
-  uniform float uOvershoot;
 
 ${attributeDecls}
   attribute float aSeed;
@@ -120,25 +100,15 @@ ${attributeDecls}
   varying float vForm;
   varying float vAlpha;
   varying float vSettle;
-  varying float vAlphaVar;
-  varying float vDof;
 
   // smoothstep(C1) と Perlin 2002 の smootherstep(C2) を uSmoother で切替（比較用）。
   // smootherstep は端点で 1 次・2 次微分が 0＝加速度が滑らか（最小躍度・人の手の動き）。
   // 既定 uSmoother=1（smootherstep）。0 で旧 smoothstep（C1・境界で加速度ジャンプ）。
-  //
-  // 【2026-07-11 Phase 2: follow-through（余韻）】uOvershoot > 0 のとき、到着直前
-  // （t≈0.86 にピークの bump）でわずかに 1 を超えてから戻る＝目標を少し行き過ぎて
-  // 帰ってくる。Disney の Follow-through 原則。t=0/1 では bump=0 なので
-  // キーフレーム到達点の位置は厳密に不変（DOM 整列・resolve の一致は保たれる）。
-  // pow(t,6)*(1-t) はピーク値 ~0.0567 → 17.65 で正規化し、最大 +6% の行き過ぎ。
-  // reduced-motion では無効（提案者: Claude、凜さん承認）。
   float smoothRange(float a, float b, float x) {
     float t = clamp((x - a) / (b - a), 0.0, 1.0);
     float s3 = t * t * (3.0 - 2.0 * t);
     float s5 = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    float bump = 17.65 * pow(t, 6.0) * (1.0 - t);
-    return mix(s3, s5, uSmoother) + uOvershoot * (1.0 - uReduced) * 0.06 * bump;
+    return mix(s3, s5, uSmoother);
   }
 
   // --- Simplex 3D noise（Ashima Arts / Stefan Gustavson, MIT/public domain） ---
@@ -212,13 +182,6 @@ ${attributeDecls}
     return vec3(x, y, z) / (2.0 * e);
   }
 
-  // 進捗 sp（0..1）に対するキーフレーム補間位置。mix 連鎖はビルド時にアンロール。
-  vec3 posAt(float sp) {
-    vec3 p = ${glyphPositionAttribute(0)};
-${mixChain}
-    return p;
-  }
-
   void main() {
     vSeed = aSeed;
     vAccent = aAccent;
@@ -240,33 +203,12 @@ ${mixChain}
     // 「現在地から最も近い今後のキーフレーム到達点」までの距離を毎フレーム
     // 計算し uStaggerCollapse として渡す。固定範囲ではなく全ての到達点で
     // 同じように畳まれる。
-    //
-    // 【2026-07-11 Phase 2: 空間相関ノイズの波（提案者: Claude、凜さん承認）】
-    // 旧来の offset = aSeed は粒子ごとに独立なランダム＝「一様にほどける」。
-    // 名作（Codrops Gommage 等）はノイズマスクで「近くの粒が連れ立って発つ」
-    // 斑（むら）の進行を作る。静的な simplex ノイズ場を引き、その値を出発順に
-    // する＝風が撫でるように塊単位で溶け・集まる。aSeed を混ぜて塊の中にも
-    // 個体差を残す。uWave=0 で旧来の独立ランダムに完全一致。
-    //
-    // 【同日修正: ノイズの参照点は「区間の出発駅の位置」で固定する】
-    // 初版は移動中の概略位置 posAt(uStage) で場を引いていたが、それだと
-    // 飛行中に offset 自体が変わり続け、粒子の進捗 stageP が揺れる／局所的に
-    // 逆行する非単調な動きになる（凜さん実機報告「拡散と収束がスムーズじゃ
-    // なくなった」の真因）。出発キーフレーム時刻 tDep での位置＝区間内で
-    // 不変の参照点に固定すれば、区間中 offset は定数＝進捗は厳密に単調。
-    // 区間境界では staggerCollapse が窓 w を 0 に畳むため、参照点の切替に
-    // よる不連続も位置には現れない。
     float w = uStagger * (1.0 - uStaggerCollapse);
-    float tDep = uTimes[0];
-${departChain}
-    vec3 posDep = posAt(tDep);
-    float wn = 0.5 + 0.5 * snoise(posDep * 0.85 + vec3(0.0, 0.0, 31.7));
-    float waveOff = clamp(wn + (aSeed - 0.5) * 0.45, 0.0, 1.0);
-    float offset = mix(aSeed, waveOff, uWave);
-    float stageP = clamp((uStage - offset * w) / max(1.0 - w, 0.001), 0.0, 1.0);
+    float stageP = clamp((uStage - aSeed * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 
     // --- キーフレーム間の位置補間（隣接ペアの mix 連鎖） ---
-    vec3 pos = posAt(stageP);
+    vec3 pos = ${glyphPositionAttribute(0)};
+${mixChain}
 
     // 遷移中（飛散区間）に外向きドリフトを足してダイナミックに。
     // 方向は原点からの外向き（特定キーフレームに依存しない一般形）。
@@ -296,19 +238,6 @@ ${departChain}
     vec4 mvPosition = viewMatrix * world;
     vDepth = -mvPosition.z;
     gl_Position = projectionMatrix * mvPosition;
-
-    // --- 質感の深み（2026-07-11 品質向上 Phase 1。提案者: Claude、凜さん承認） ---
-    // 整列・字形時（hold）は両効果とも 0 に畳む: DOM ピクセル一致と可読性の
-    // 既存保証（settle/form まわりの一連の修正）を壊さないための必須条件。
-    float hold = max(uSettle, uForm);
-    // 粒子ごとの透明度ばらつき。サイズ・きらめきと相関しないよう aSeed を
-    // ハッシュで脱相関してから使う（同じ粒が常に「大きくて明るくて濃い」に
-    // ならないように）。飛散中のみ有効で、浮遊感・奥行き感を作る。
-    float hashA = fract(aSeed * 43758.5453);
-    vAlphaVar = mix(1.0, 0.45 + 0.55 * hashA, uAlphaVar * (1.0 - hold));
-    // 擬似被写界深度: フォーカス面（テキストの z=0 平面 = カメラ距離 uFocus）
-    // から離れた粒ほどボケる。整列した文字はフォーカス面上なので影響ゼロ。
-    vDof = clamp(abs(vDepth - uFocus) * 0.45, 0.0, 1.0) * uDof * (1.0 - hold);
 
     // --- 透明度: スワップ点まで不可視、スワップ点で即・不透明（フェード無し）。 ---
     // DOM 見出しと同位置・同サイズで一致しているため、瞬時の切替が「文字→粒子」に見える。
@@ -350,10 +279,6 @@ ${departChain}
     // 「収束後に薄くなる」不具合の修正が効かなかった。上限自体もモバイルの
     // ボコボコ対策で 5.5→4.6 に抑える。
     gl_PointSize = clamp(gl_PointSize, 1.0, mix(4.0, 4.2, max(uForm, uSettle)) * uPixelRatio * max(uSizeScale, 1.0));
-    // ボケた粒はレンズのボケ円のように少し大きく（clamp の後に掛ける:
-    // 上限は「整列した文字の粒」を守るためのもので、ボケ粒はフォーカス面から
-    // 離れた飛散中の粒に限られる）。フラグメント側でエッジを軟らかく・薄くする。
-    gl_PointSize *= 1.0 + vDof * 0.5;
   }
 `;
 }
@@ -373,16 +298,12 @@ export const FRAGMENT_SHADER = /* glsl */ `
   varying float vForm;
   varying float vAlpha;
   varying float vSettle;
-  varying float vAlphaVar;
-  varying float vDof;
 
   void main() {
     // 円形のソフトな点。中心で 1、縁で 0（smoothstep は edge0<edge1 必須なので反転して使う）。
-    // ボケ粒（vDof）は芯の半径を 0 まで潰し、全体がガウス状の柔らかい円になる
-    // （2026-07-11 品質向上 Phase 1: レンズのボケ円。提案者: Claude、凜さん承認）。
     vec2 uv = gl_PointCoord - 0.5;
     float r = length(uv);
-    float alpha = 1.0 - smoothstep(mix(0.12, 0.0, vDof), 0.5, r);
+    float alpha = 1.0 - smoothstep(0.12, 0.5, r);
     if (alpha < 0.02) discard;
 
     // 主体はインク、一部の粒だけアクセント色。字形収束時はやや控えめに。
@@ -393,13 +314,6 @@ export const FRAGMENT_SHADER = /* glsl */ `
     float spark = step(0.94, vSeed);
     col = mix(col, uColorAccent, spark * mix(0.45, 0.15, vSettle) * uSparkle);
 
-    // ボケ粒はわずかに脱彩度（輝度へ寄せる）: 遠景が霞む大気遠近の効果で
-    // 奥行きの「層」が生まれる。整列時は vDof=0 なので文字の色は不変。
-    // resolve（実 DOM 文字とのクロスフェード）中に色を動かすと二重像に
-    // 見えるため、脱彩度は意図的に vDof 由来のみに限定している。
-    float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col = mix(col, vec3(lum), vDof * 0.35);
-
     // 奥行きで濃淡（明背景での視認性確保のため下限を持たせる）。
     float floorFade = mix(0.45, 0.78, vSettle);
     float depthFade = clamp(1.0 - (vDepth - 3.0) * 0.10, floorFade, 1.0);
@@ -409,9 +323,7 @@ export const FRAGMENT_SHADER = /* glsl */ `
     // 参照。精密な字形に収束した粒子がストローク幅の減少分だけ薄く見える
     // 現象を打ち消す（モバイル実機のボコボコ対策で当初の2.2から控えめに
     // 戻した）。
-    // vAlphaVar = 粒子ごとの透明度個体差（飛散中のみ、整列時は 1 に畳まれる）。
-    // ボケ粒は面積が増えた分 (1 - vDof*0.35) で減光しエネルギーを保存する。
-    float a = alpha * depthFade * vAlpha * vAlphaVar * (1.0 - vDof * 0.35);
+    float a = alpha * depthFade * vAlpha;
     a = mix(a, clamp(a * 1.35, 0.0, 1.0), vSettle);
 
     gl_FragColor = vec4(col, a);
