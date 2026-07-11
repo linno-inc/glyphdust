@@ -80,7 +80,16 @@ export function App() {
         // LINNO へ収束する（GlyphDustHero.tsx の検証結果と同じ値）。
         timing={[0, 0.52, 0.84]}
         driver={{ type: "scroll", triggerHeight: TRIGGER_HEIGHT }}
-        colors={{ ink: "#1b2330", accent: "#0055ff", accentRatio: 0.18 }}
+        // 【2026-07-11 本番 GlyphStageEngine と完全一致】凜さんの「元々良かった」
+        // 体感の実体は、プリセット既定ではなく本番の削ぎ落とした構成:
+        // 有機ノイズ全オフ（drift/sparkle/curl/burst=0。飛行中の粒が揺れない
+        // 純粋な補間移動）・インク単色（アクセント無し）・34,000粒・dpr上限3。
+        // デモがプリセット既定（全部オン・11,000粒・dpr1.75）だったのが
+        // 「拡散がスムーズじゃない」の残る差分だった。
+        style={{ drift: 0, sparkle: 0, curl: 0, burst: 0 }}
+        dpr={[1, 3]}
+        count={{ desktop: 34000, mobile: 18000 }}
+        colors={{ ink: "#1b2330", accent: "#1b2330", accentRatio: 0 }}
         fallback={
           <h1 style={{ padding: "20vh 8vw", fontSize: "8vw", lineHeight: 1.1 }}>
             次のユーザーは、
