@@ -16,5 +16,10 @@ export default defineConfig({
   optimizeDeps: {
     include: ["react", "react-dom", "react-dom/client", "three", "@react-three/fiber"],
   },
-  server: { port: 5180 },
+  server: {
+    port: 5180,
+    // 検証中のブラウザキャッシュ事故防止: 常に最新を配る（凜さん依頼 2026-07-12
+    // 「キャッシュ対策でパラメーターつけてよ」→ URL パラメータ不要の恒久対策）。
+    headers: { "Cache-Control": "no-store" },
+  },
 });
