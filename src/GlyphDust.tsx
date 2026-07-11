@@ -70,10 +70,10 @@ const FIB = "fibonacci" as const;
 // ポスト処理のみで粒子の軌道・タイミングは不変。発光は暗背景向けなので glow プリセット
 // だけ既定オン。モバイルは負荷対策で自動オフ（uBloom ブーストも 0 に畳む）。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, bloom: 0 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, bloom: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, bloom: 0 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, bloom: 0.6 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0, dof: 0, wave: 0, bloom: 0.6 },
 };
 
 function clamp01(x: number): number {
@@ -243,6 +243,7 @@ export function GlyphDust(props: GlyphDustProps) {
       burst: style?.burst ?? base.burst,
       alphaVar: style?.alphaVar ?? base.alphaVar,
       dof: style?.dof ?? base.dof,
+      wave: style?.wave ?? base.wave,
       bloom: style?.bloom ?? base.bloom,
     };
   }, [
@@ -258,6 +259,7 @@ export function GlyphDust(props: GlyphDustProps) {
     style?.burst,
     style?.alphaVar,
     style?.dof,
+    style?.wave,
     style?.bloom,
   ]);
 

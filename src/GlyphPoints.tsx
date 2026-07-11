@@ -54,6 +54,7 @@ export interface ResolvedStyle {
   burst: number;
   alphaVar: number;
   dof: number;
+  wave: number;
   bloom: number;
 }
 
@@ -87,6 +88,7 @@ interface GlyphUniforms {
   uAlphaVar: THREE.IUniform<number>;
   uDof: THREE.IUniform<number>;
   uFocus: THREE.IUniform<number>;
+  uWave: THREE.IUniform<number>;
   uBloom: THREE.IUniform<number>;
 }
 
@@ -452,6 +454,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
       uAlphaVar: { value: style.alphaVar },
       uDof: { value: style.dof },
       uFocus: { value: cameraZ },
+      uWave: { value: style.wave },
       uBloom: { value: 0 },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -688,6 +691,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     u.uAlphaVar.value = style.alphaVar;
     u.uDof.value = style.dof;
     u.uFocus.value = cameraZ;
+    u.uWave.value = style.wave;
     // bloom の HDR ブーストはコンポーザー（GlyphDust 側）とペアで効く。モバイルは
     // コンポーザーを積まないので、ブーストだけ残って色が飛ばないよう 0 に畳む。
     u.uBloom.value = isMobile() ? 0 : style.bloom;
@@ -696,7 +700,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
         ? THREE.AdditiveBlending
         : THREE.NormalBlending;
     mat.needsUpdate = true;
-  }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend, style.alphaVar, style.dof, style.bloom, cameraZ]);
+  }, [style.size, style.drift, style.stagger, style.curl, style.easing, style.sparkle, style.blend, style.alphaVar, style.dof, style.wave, style.bloom, cameraZ]);
 
   useFrame((state) => {
     const p = pointsRef.current;

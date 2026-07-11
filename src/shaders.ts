@@ -29,6 +29,7 @@
  *  - `uPixelRatio`   … dpr
  *  - `uAlphaVar`     … 0..1 粒子ごとの透明度ばらつき強度（飛散中のみ・整列時は畳む）
  *  - `uDof`          … 0..1 擬似被写界深度の強さ（フォーカス面から離れた粒をボカす）
+ *  - `uWave`         … 0..1 stagger の空間相関度（0=独立ランダム、1=ノイズ場の波）
  *  - `uFocus`        … フォーカス面のカメラ距離（= camera.z。テキストは z=0 平面）
  *
  * uniform（フラグメント）:
@@ -66,12 +67,22 @@ export function buildVertexShader(keyframeCount: number): string {
   ).join("\n");
 
   // 隣接キーフレームの mix 連鎖（アンロール）。N==1 のときは補間なし。
-  // 進捗は per-particle stagger 済みの `stageP` を使う（粒子ごとに到達タイミングをずらす）。
+  // 【2026-07-11 溶解波の再導入（凜さん依頼「テキストが粒子にばらけていくように」）】
+  // mix 連鎖を関数 posAt(sp) に切り出し、2 回サンプリングできるようにした:
+  // ①区間の出発駅時刻での位置で空間ノイズ場（波）を引く ②波でずらした進捗で
+  // 本来の位置を求める。mix 連鎖は数個の mix なので 2 回評価しても安価。
   const mixChain = Array.from(
     { length: keyframeCount - 1 },
     (_, k) =>
-      `    pos = mix(pos, ${glyphPositionAttribute(k + 1)}, ` +
-      `smoothRange(uTimes[${k}], uTimes[${k + 1}], stageP));`,
+      `    p = mix(p, ${glyphPositionAttribute(k + 1)}, ` +
+      `smoothRange(uTimes[${k}], uTimes[${k + 1}], sp));`,
+  ).join("\n");
+
+  // 現在の補間区間の「出発キーフレーム時刻」（uStage 以下で最大の uTimes[k]）を
+  // 選ぶチェーン（アンロール）。波ノイズの参照点を区間内で固定するために使う。
+  const departChain = Array.from(
+    { length: keyframeCount - 1 },
+    (_, k) => `    tDep = mix(tDep, uTimes[${k + 1}], step(uTimes[${k + 1}], uStage));`,
   ).join("\n");
 
   return /* glsl */ `
@@ -95,6 +106,7 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uAlphaVar;
   uniform float uDof;
   uniform float uFocus;
+  uniform float uWave;
 
 ${attributeDecls}
   attribute float aSeed;
@@ -190,6 +202,13 @@ ${attributeDecls}
     return vec3(x, y, z) / (2.0 * e);
   }
 
+  // 進捗 sp（0..1）に対するキーフレーム補間位置。mix 連鎖はビルド時にアンロール。
+  vec3 posAt(float sp) {
+    vec3 p = ${glyphPositionAttribute(0)};
+${mixChain}
+    return p;
+  }
+
   void main() {
     vSeed = aSeed;
     vAccent = aAccent;
@@ -211,12 +230,31 @@ ${attributeDecls}
     // 「現在地から最も近い今後のキーフレーム到達点」までの距離を毎フレーム
     // 計算し uStaggerCollapse として渡す。固定範囲ではなく全ての到達点で
     // 同じように畳まれる。
+    // 【2026-07-11 溶解波（再導入・opt-in）: 提案者 Claude、依頼者 凜さん
+    // 「もうちょっとテキストが粒子にばらけていくように」】
+    // 旧来の offset = aSeed は粒子ごとに独立なランダム＝「一様にほどける」。
+    // 名作（Codrops Gommage 等）はノイズマスクで「近くの粒が連れ立って発つ」
+    // 斑（むら）の進行を作る。静的な simplex ノイズ場を引き、その値を出発順に
+    // する＝風が撫でるように塊単位で溶け・集まる。aSeed を混ぜて塊の中にも
+    // 個体差を残す。uWave=0 で旧来の独立ランダムに完全一致（既定・恒等）。
+    //
+    // 【初版の教訓（e7ebca2）: ノイズの参照点は「区間の出発駅の位置」で固定する】
+    // 移動中の概略位置で場を引くと飛行中に offset 自体が変わり続け、進捗 stageP が
+    // 揺れる／局所的に逆行する非単調な動きになる（「スムーズじゃない」の真因の一つ）。
+    // 出発キーフレーム時刻 tDep での位置＝区間内で不変の参照点に固定すれば、
+    // 区間中 offset は定数＝進捗は厳密に単調。区間境界では staggerCollapse が
+    // 窓 w を 0 に畳むため、参照点の切替による不連続も位置には現れない。
     float w = uStagger * (1.0 - uStaggerCollapse);
-    float stageP = clamp((uStage - aSeed * w) / max(1.0 - w, 0.001), 0.0, 1.0);
+    float tDep = uTimes[0];
+${departChain}
+    vec3 posDep = posAt(tDep);
+    float wn = 0.5 + 0.5 * snoise(posDep * 0.85 + vec3(0.0, 0.0, 31.7));
+    float waveOff = clamp(wn + (aSeed - 0.5) * 0.45, 0.0, 1.0);
+    float offset = mix(aSeed, waveOff, uWave);
+    float stageP = clamp((uStage - offset * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 
     // --- キーフレーム間の位置補間（隣接ペアの mix 連鎖） ---
-    vec3 pos = ${glyphPositionAttribute(0)};
-${mixChain}
+    vec3 pos = posAt(stageP);
 
     // 遷移中（飛散区間）に外向きドリフトを足してダイナミックに。
     // 方向は原点からの外向き（特定キーフレームに依存しない一般形）。
