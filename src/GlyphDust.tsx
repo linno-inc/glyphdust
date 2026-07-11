@@ -26,14 +26,17 @@ const DEFAULT_DPR: [number, number] = [1, 1.75];
 /** 質感プリセット → 解決済みスタイル。`style` で部分上書きされる土台。 */
 const SMOOTH = "smootherstep" as const;
 const FIB = "fibonacci" as const;
-// alphaVar / dof は 2026-07-11 品質向上 Phase 1 で追加（提案者: Claude、凜さん承認。
-// 世界水準の粒子演出リサーチより: 粒子ごとの透明度個体差＝浮遊感、擬似被写界深度＝
-// 奥行きの層。どちらも整列時はシェーダ側で 0 に畳まれ、文字の可読性・ピクセル一致は不変）。
+// alphaVar / dof は 2026-07-11 品質向上 Phase 1、wave / overshoot は同 Phase 2 で追加
+// （提案者: Claude、凜さん承認。世界水準の粒子演出リサーチより:
+//   alphaVar=透明度の個体差（浮遊感）、dof=擬似被写界深度（奥行きの層）、
+//   wave=stagger の空間相関（風が撫でるように塊で溶ける）、
+//   overshoot=到着直前の follow-through（行き過ぎて戻る余韻）。
+//   いずれも整列時はシェーダ側で畳まれ、文字の可読性・ピクセル一致は不変）。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5 },
-  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5, wave: 0.75, overshoot: 0.35 },
+  minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0, wave: 0.4, overshoot: 0 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7, wave: 0.9, overshoot: 0.6 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6, wave: 0.8, overshoot: 0.4 },
 };
 
 function clamp01(x: number): number {
@@ -203,6 +206,8 @@ export function GlyphDust(props: GlyphDustProps) {
       burst: style?.burst ?? base.burst,
       alphaVar: style?.alphaVar ?? base.alphaVar,
       dof: style?.dof ?? base.dof,
+      wave: style?.wave ?? base.wave,
+      overshoot: style?.overshoot ?? base.overshoot,
     };
   }, [
     preset,
@@ -217,6 +222,8 @@ export function GlyphDust(props: GlyphDustProps) {
     style?.burst,
     style?.alphaVar,
     style?.dof,
+    style?.wave,
+    style?.overshoot,
   ]);
 
   const resolvedColors = useMemo<ResolvedColors>(

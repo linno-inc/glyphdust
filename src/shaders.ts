@@ -30,6 +30,8 @@
  *  - `uAlphaVar`     … 0..1 粒子ごとの透明度ばらつき強度（飛散中のみ・整列時は畳む）
  *  - `uDof`          … 0..1 擬似被写界深度の強さ（フォーカス面から離れた粒をボカす）
  *  - `uFocus`        … フォーカス面のカメラ距離（= camera.z。テキストは z=0 平面）
+ *  - `uWave`         … 0..1 stagger の空間相関度（0=独立ランダム、1=ノイズ場の波）
+ *  - `uOvershoot`    … 0..1 到着直前の follow-through（行き過ぎて戻る余韻）の強さ
  *
  * uniform（フラグメント）:
  *  - `uColorInk` / `uColorAccent` … 配色
@@ -66,12 +68,15 @@ export function buildVertexShader(keyframeCount: number): string {
   ).join("\n");
 
   // 隣接キーフレームの mix 連鎖（アンロール）。N==1 のときは補間なし。
-  // 進捗は per-particle stagger 済みの `stageP` を使う（粒子ごとに到達タイミングをずらす）。
+  // 【2026-07-11 Phase 2】mix 連鎖を関数 posAt(sp) に切り出し、2 回サンプリング
+  // できるようにした: ①stagger 抜きの素の進捗で「粒子の概略位置」を求め、そこで
+  // 空間ノイズ場（波）を引く ②波でずらした進捗で本来の位置を求める。
+  // mix 連鎖は数個の mix なので 2 回評価しても安価（提案者: Claude、凜さん承認）。
   const mixChain = Array.from(
     { length: keyframeCount - 1 },
     (_, k) =>
-      `    pos = mix(pos, ${glyphPositionAttribute(k + 1)}, ` +
-      `smoothRange(uTimes[${k}], uTimes[${k + 1}], stageP));`,
+      `    p = mix(p, ${glyphPositionAttribute(k + 1)}, ` +
+      `smoothRange(uTimes[${k}], uTimes[${k + 1}], sp));`,
   ).join("\n");
 
   return /* glsl */ `
@@ -95,6 +100,8 @@ export function buildVertexShader(keyframeCount: number): string {
   uniform float uAlphaVar;
   uniform float uDof;
   uniform float uFocus;
+  uniform float uWave;
+  uniform float uOvershoot;
 
 ${attributeDecls}
   attribute float aSeed;
@@ -112,11 +119,19 @@ ${attributeDecls}
   // smoothstep(C1) と Perlin 2002 の smootherstep(C2) を uSmoother で切替（比較用）。
   // smootherstep は端点で 1 次・2 次微分が 0＝加速度が滑らか（最小躍度・人の手の動き）。
   // 既定 uSmoother=1（smootherstep）。0 で旧 smoothstep（C1・境界で加速度ジャンプ）。
+  //
+  // 【2026-07-11 Phase 2: follow-through（余韻）】uOvershoot > 0 のとき、到着直前
+  // （t≈0.86 にピークの bump）でわずかに 1 を超えてから戻る＝目標を少し行き過ぎて
+  // 帰ってくる。Disney の Follow-through 原則。t=0/1 では bump=0 なので
+  // キーフレーム到達点の位置は厳密に不変（DOM 整列・resolve の一致は保たれる）。
+  // pow(t,6)*(1-t) はピーク値 ~0.0567 → 17.65 で正規化し、最大 +6% の行き過ぎ。
+  // reduced-motion では無効（提案者: Claude、凜さん承認）。
   float smoothRange(float a, float b, float x) {
     float t = clamp((x - a) / (b - a), 0.0, 1.0);
     float s3 = t * t * (3.0 - 2.0 * t);
     float s5 = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return mix(s3, s5, uSmoother);
+    float bump = 17.65 * pow(t, 6.0) * (1.0 - t);
+    return mix(s3, s5, uSmoother) + uOvershoot * (1.0 - uReduced) * 0.06 * bump;
   }
 
   // --- Simplex 3D noise（Ashima Arts / Stefan Gustavson, MIT/public domain） ---
@@ -190,6 +205,13 @@ ${attributeDecls}
     return vec3(x, y, z) / (2.0 * e);
   }
 
+  // 進捗 sp（0..1）に対するキーフレーム補間位置。mix 連鎖はビルド時にアンロール。
+  vec3 posAt(float sp) {
+    vec3 p = ${glyphPositionAttribute(0)};
+${mixChain}
+    return p;
+  }
+
   void main() {
     vSeed = aSeed;
     vAccent = aAccent;
@@ -211,12 +233,23 @@ ${attributeDecls}
     // 「現在地から最も近い今後のキーフレーム到達点」までの距離を毎フレーム
     // 計算し uStaggerCollapse として渡す。固定範囲ではなく全ての到達点で
     // 同じように畳まれる。
+    //
+    // 【2026-07-11 Phase 2: 空間相関ノイズの波（提案者: Claude、凜さん承認）】
+    // 旧来の offset = aSeed は粒子ごとに独立なランダム＝「一様にほどける」。
+    // 名作（Codrops Gommage 等）はノイズマスクで「近くの粒が連れ立って発つ」
+    // 斑（むら）の進行を作る。ここでは粒子の概略位置（stagger 抜き進捗の
+    // posAt）で静的な simplex ノイズ場を引き、その値を出発順にする＝
+    // 風が撫でるように塊単位で溶け・集まる。aSeed を少量混ぜて塊の中にも
+    // 個体差を残す。uWave=0 で旧来の独立ランダムに完全一致。
     float w = uStagger * (1.0 - uStaggerCollapse);
-    float stageP = clamp((uStage - aSeed * w) / max(1.0 - w, 0.001), 0.0, 1.0);
+    vec3 posLin = posAt(uStage);
+    float wn = 0.5 + 0.5 * snoise(posLin * 0.85 + vec3(0.0, 0.0, 31.7));
+    float waveOff = clamp(wn + (aSeed - 0.5) * 0.35, 0.0, 1.0);
+    float offset = mix(aSeed, waveOff, uWave);
+    float stageP = clamp((uStage - offset * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 
     // --- キーフレーム間の位置補間（隣接ペアの mix 連鎖） ---
-    vec3 pos = ${glyphPositionAttribute(0)};
-${mixChain}
+    vec3 pos = posAt(stageP);
 
     // 遷移中（飛散区間）に外向きドリフトを足してダイナミックに。
     // 方向は原点からの外向き（特定キーフレームに依存しない一般形）。
