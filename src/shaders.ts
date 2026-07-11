@@ -79,6 +79,13 @@ export function buildVertexShader(keyframeCount: number): string {
       `smoothRange(uTimes[${k}], uTimes[${k + 1}], sp));`,
   ).join("\n");
 
+  // 現在の補間区間の「出発キーフレーム時刻」（uStage 以下で最大の uTimes[k]）を
+  // 選ぶチェーン（アンロール）。波ノイズの参照点を区間内で固定するために使う。
+  const departChain = Array.from(
+    { length: keyframeCount - 1 },
+    (_, k) => `    tDep = mix(tDep, uTimes[${k + 1}], step(uTimes[${k + 1}], uStage));`,
+  ).join("\n");
+
   return /* glsl */ `
   uniform float uTime;
   uniform float uStage;
@@ -237,14 +244,24 @@ ${mixChain}
     // 【2026-07-11 Phase 2: 空間相関ノイズの波（提案者: Claude、凜さん承認）】
     // 旧来の offset = aSeed は粒子ごとに独立なランダム＝「一様にほどける」。
     // 名作（Codrops Gommage 等）はノイズマスクで「近くの粒が連れ立って発つ」
-    // 斑（むら）の進行を作る。ここでは粒子の概略位置（stagger 抜き進捗の
-    // posAt）で静的な simplex ノイズ場を引き、その値を出発順にする＝
-    // 風が撫でるように塊単位で溶け・集まる。aSeed を少量混ぜて塊の中にも
+    // 斑（むら）の進行を作る。静的な simplex ノイズ場を引き、その値を出発順に
+    // する＝風が撫でるように塊単位で溶け・集まる。aSeed を混ぜて塊の中にも
     // 個体差を残す。uWave=0 で旧来の独立ランダムに完全一致。
+    //
+    // 【同日修正: ノイズの参照点は「区間の出発駅の位置」で固定する】
+    // 初版は移動中の概略位置 posAt(uStage) で場を引いていたが、それだと
+    // 飛行中に offset 自体が変わり続け、粒子の進捗 stageP が揺れる／局所的に
+    // 逆行する非単調な動きになる（凜さん実機報告「拡散と収束がスムーズじゃ
+    // なくなった」の真因）。出発キーフレーム時刻 tDep での位置＝区間内で
+    // 不変の参照点に固定すれば、区間中 offset は定数＝進捗は厳密に単調。
+    // 区間境界では staggerCollapse が窓 w を 0 に畳むため、参照点の切替に
+    // よる不連続も位置には現れない。
     float w = uStagger * (1.0 - uStaggerCollapse);
-    vec3 posLin = posAt(uStage);
-    float wn = 0.5 + 0.5 * snoise(posLin * 0.85 + vec3(0.0, 0.0, 31.7));
-    float waveOff = clamp(wn + (aSeed - 0.5) * 0.35, 0.0, 1.0);
+    float tDep = uTimes[0];
+${departChain}
+    vec3 posDep = posAt(tDep);
+    float wn = 0.5 + 0.5 * snoise(posDep * 0.85 + vec3(0.0, 0.0, 31.7));
+    float waveOff = clamp(wn + (aSeed - 0.5) * 0.45, 0.0, 1.0);
     float offset = mix(aSeed, waveOff, uWave);
     float stageP = clamp((uStage - offset * w) / max(1.0 - w, 0.001), 0.0, 1.0);
 

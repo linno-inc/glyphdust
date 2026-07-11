@@ -32,11 +32,14 @@ const FIB = "fibonacci" as const;
 //   wave=stagger の空間相関（風が撫でるように塊で溶ける）、
 //   overshoot=到着直前の follow-through（行き過ぎて戻る余韻）。
 //   いずれも整列時はシェーダ側で畳まれ、文字の可読性・ピクセル一致は不変）。
+// overshoot の既定は 0（オプトイン）: 収束の厳密な単調性を既定で保つため
+// （凜さん 2026-07-11 実機報告「拡散と収束がスムーズじゃなくなった」を受けて
+// 0.35→0 に変更。行き過ぎ→戻りの余韻はスクラブ操作と相性が悪い場合がある）。
 const PRESETS: Record<GlyphPreset, ResolvedStyle> = {
-  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5, wave: 0.75, overshoot: 0.35 },
+  default: { size: 1, blend: "normal", drift: 1, sparkle: 1, stagger: 0.08, curl: 1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.55, dof: 0.5, wave: 0.65, overshoot: 0 },
   minimal: { size: 0.92, blend: "normal", drift: 0.35, sparkle: 0, stagger: 0.04, curl: 0, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.25, dof: 0, wave: 0.4, overshoot: 0 },
-  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7, wave: 0.9, overshoot: 0.6 },
-  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6, wave: 0.8, overshoot: 0.4 },
+  lively: { size: 1.05, blend: "normal", drift: 1.4, sparkle: 1.4, stagger: 0.12, curl: 1.3, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.7, dof: 0.7, wave: 0.85, overshoot: 0.3 },
+  glow: { size: 1.1, blend: "additive", drift: 1.1, sparkle: 1.5, stagger: 0.1, curl: 1.1, easing: SMOOTH, scatterPattern: FIB, burst: 1, alphaVar: 0.6, dof: 0.6, wave: 0.7, overshoot: 0 },
 };
 
 function clamp01(x: number): number {
