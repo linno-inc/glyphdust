@@ -528,8 +528,13 @@ export function GlyphPoints(props: GlyphPointsProps) {
     if (!el || !timeline.hasResolve) return;
     const finalBuf = built.buffers[n - 1];
     if (!finalBuf) return;
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
+    // 粒子がレンダリングされる canvas の実寸（CSS px）を使う。window.innerWidth だと
+    // 縦スクロールバー分（macOS 実測 15px）広く、オーバーレイが粒子グリフから
+    // 右へ半スクロールバー分ずれる（凜さん 2026-07-12「LINNOの収束のところが
+    // ずれてる」実機報告。rebuildDomGlyphs には同じ修正が入っていたが、
+    // フィナーレのオーバーレイ整列だけ window 基準のまま残っていた）。
+    const vpW = sizeRef.current.width;
+    const vpH = sizeRef.current.height;
     const { worldW: visW } = viewSizeAtZ0(vpW, vpH, cameraFov, cameraZ);
 
     // 最終キーフレームのフォント文字列から family / weight を取り出す
