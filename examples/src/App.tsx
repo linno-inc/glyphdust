@@ -13,13 +13,15 @@ const TRIGGER_HEIGHT = 6.2;
 // スッと消えて→凝縮したテキストの形が表れて→拡散し始める、をスムーズに」）】
 // 旧: SWAP_AT=0.08 で DOM 見出しを即・非表示＋粒子は既に動き出している＝段差が2つ。
 // 新（凜さん 2026-07-11「収束はテキストに収束→背景から白いテキストが黒に変わって
-// いくからスムーズ。拡散はその逆をやればいいだけでは」）: 収束側で既にやっている
-// クロスフェード（粒子が溶けながら実テキストが立つ）の正確な逆再生にする。
-//  ①実見出しのフェードアウトは、粒子のフェードイン窓 [SWAP_AT, SWAP_AT+swapFade] と
-//    完全に同窓・同カーブ（smootherstep）の相補 = 合計の濃度がほぼ一定のまま
-//    実文字→粒子文字にモーフする（両者はピクセル整列済み）
-//  ②timing[0]=hold まで粒子は完全静止 → そこから初めて拡散が始まる
-// SWAP_AT はライブラリ内部の swapAt = times[1] * 0.15 と同値に保つこと。
+// いくからスムーズ。拡散はその逆をやればいいだけでは」＋ 2026-07-12「テキストと
+// 粒子のズレをなくせばいい」）: 静止した粒子テキストと実テキストを並べて見せると
+// 点描の質感差・サンプリング厚みの視差が「ズレ」として見える。なので
+//  ①静止保持（〜hold）の間は **実 DOM テキストだけ** を見せる（粒子は不可視）
+//  ②粒子が動き出す瞬間（swapAt=hold）に、実文字フェードアウト × 粒子フェードインを
+//    同窓・同カーブ（smootherstep）の相補クロスフェードで行う
+//    ＝「crisp な文字が、飛び立つ粒子に変わりながらほどけていく」
+//  収束側（動きが終わる瞬間に実テキストへ解決）の正確な鏡像。
+// SWAP_AT はライブラリ既定の swapAt = times[1] * 0.15（hold=0 のリセット時に使う）。
 const SWAP_AT = 0.52 * 0.15;
 
 /**
@@ -80,10 +82,11 @@ export function App() {
       if (!el) return;
       const total = (TRIGGER_HEIGHT - 1) * window.innerHeight;
       const p = total > 0 ? window.scrollY / total : 0;
+      const at = hold > 0 ? hold : SWAP_AT;
       const t =
         swapFade > 0
-          ? Math.min(1, Math.max(0, (p - SWAP_AT) / swapFade))
-          : p >= SWAP_AT
+          ? Math.min(1, Math.max(0, (p - at) / swapFade))
+          : p >= at
             ? 1
             : 0;
       const s = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep（ライブラリと同カーブ）
@@ -98,7 +101,7 @@ export function App() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [swapFade]);
+  }, [swapFade, hold]);
 
   return (
     <main>
@@ -115,6 +118,7 @@ export function App() {
         // そこから初めて拡散が始まる（導入3段階化。スワップ時に既に動いている段差を解消）。
         timing={[hold, 0.52, 0.84]}
         swapFade={swapFade}
+        swapAt={hold > 0 ? hold : undefined}
         driver={{ type: "scroll", triggerHeight: TRIGGER_HEIGHT }}
         // 【2026-07-11 本番 GlyphStageEngine と完全一致】凜さんの「元々良かった」
         // 体感の実体は、プリセット既定ではなく本番の削ぎ落とした構成:
@@ -158,8 +162,8 @@ export function App() {
         </div>
         {(
           [
-            ["静止保持 hold", hold, 0, 0.3, 0.01, setHold, "粒子テキストが静止したまま保つ長さ（0=すぐ動き出す）"],
-            ["出現フェード swapFade", swapFade, 0, 0.2, 0.01, setSwapFade, "粒子テキストのフェードイン幅（0=瞬時に切替）"],
+            ["静止保持 hold", hold, 0, 0.3, 0.01, setHold, "実テキストのまま保つ長さ＝拡散開始点（0=すぐ動き出す）"],
+            ["入替幅 swapFade", swapFade, 0, 0.2, 0.01, setSwapFade, "動き出す瞬間の実文字→粒子クロスフェード幅（0=瞬時）"],
             ["ばらけ波 wave", wave, 0, 1, 0.05, setWave, "0=一様にほどける / 1=塊単位で溶ける"],
             ["ばらけ幅 stagger", stagger, 0, 0.4, 0.01, setStagger, "早く発つ粒と残る粒の時間差（現行 0.08）"],
             ["質感 alphaVar", alphaVar, 0, 1, 0.05, setAlphaVar, "粒の透明度の個体差（dofは常に0）"],
