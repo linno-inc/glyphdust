@@ -1,7 +1,7 @@
 {
   "name": "glyphdust",
-  "version": "0.9.7",
-  "description": "Text → particles → glyph → real-text resolve. One React-three-fiber component, or one React-free call: glyphText(\"#hero\", \"LINNO\").",
+  "version": "0.10.0",
+  "description": "Text → particles → glyph → real-text resolve. One React-three-fiber component: <GlyphDust>.",
   "type": "module",
   "license": "MIT",
   "author": "LINNO (NOGUCHILin)",
@@ -31,15 +31,12 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "unpkg": "./dist/glyphdust.min.js",
-  "jsdelivr": "./dist/glyphdust.min.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "./cdn": "./dist/glyphdust.min.js",
     "./package.json": "./package.json"
   },
   "files": [

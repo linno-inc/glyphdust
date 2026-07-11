@@ -4,6 +4,51 @@ All notable changes to **glyphdust** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-07-11
+
+### Removed (**breaking**)
+
+- **React-free の `glyphText()` ワンコール API（`src/vanilla.ts`）・CDN 向け IIFE
+  ビルド（`glyphdust.min.js` / `glyphdust/cdn` / `unpkg` / `jsdelivr` フィールド）
+  を削除。** 外部利用が確認できず（実消費者は LINNO コーポレートサイトの React
+  経路のみ）、パッケージ最大のメンテ負債（約 1,600 行 + 専用ビルド + examples
+  3 枚）だったため、パッケージを `<GlyphDust>` コンポーネント一本に絞った。
+  必要なら 0.9.x を利用するか git 履歴から復活できる。
+  （提案者: 凜さん 2026-07-11「いらないものを削除して徹底的に簡素化」、
+  削除範囲の確定: Claude 調査 + 凜さん承認）
+- 公開 API から未使用の低レベルエクスポートを削除（`buildTextTargets` /
+  `buildDenseTextTargets` / `buildShapeTargets` / `measureSvgPathBounds` /
+  `buildVertexShader` / `FRAGMENT_SHADER` / `glyphPositionAttribute` /
+  `viewSizeAtZ0` / `buildGlyphFromDOM` / `computeScreenRect` /
+  `createScrollProgress` / `useScrollProgress` / `prefersReducedMotion` /
+  `useReducedMotion` / `VERSION` 等）。公開面は `GlyphDust` と props 型のみに。
+  実装はすべて内部モジュールとして残っており挙動は不変。
+
+### Fixed
+
+- `GlyphPoints.tsx` のキャッシュキー区切りにソース直埋めされていた生の
+  NUL バイト（0x00）を `\u0000` エスケープ表記に修正（挙動は同一）。生バイト
+  のままだと grep 等のツール群がファイルをバイナリ扱いして検索から漏れる。
+
+## [0.9.7] — 2026-07-10
+
+### Fixed
+
+- **駅0（`isStart`）の退場フェードを plateau/fall 長で他駅と完全に一致させた。**
+  isStart 特例式が他駅の約4倍の静止時間を生んでいた（詳細はコミット fbce7d8）。
+
+## [0.9.6] — 2026-07-09
+
+### Fixed
+
+- **DOM 側の自動折り返しを粒子字形にも反映**（詳細はコミット eed099a）。
+
+## [0.9.5] — 2026-07-08
+
+### Fixed
+
+- **直接モーフの粒子形成・クロスフェードの質感を大幅改善**（詳細はコミット bb7cdf8）。
+
 ## [0.9.4] — 2026-07-07
 
 ### Fixed

@@ -6,9 +6,6 @@
  *
  * 進捗ゲッターは「毎フレーム呼ばれる純粋な関数」として表現する（useFrame から polling）。
  * SSR セーフ（`window` 不在時は 0 を返す）。
- *
- * このファイルは React 非依存に保つ（CDN ビルドへの React 混入回避）。React フック
- * {@link import("./use-scroll-progress.js").useScrollProgress} は別ファイルへ分離してある。
  */
 
 /** sticky トリガー領域の既定高さ（×100vh）。 */
@@ -84,21 +81,4 @@ export function computeAutoplayProgress(
 /** 0..1 にクランプ。 */
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
-}
-
-/**
- * 要素の sticky スクロール進捗 0→1 を返すゲッターを作る。
- * 進捗 = `-rect.top / (rect.height - innerHeight)`（要素上端が viewport 上端を通過し切るまでで 0→1）。
- * SSR / 要素 null 時は 0。
- */
-export function createScrollProgress(
-  element: HTMLElement | null,
-): () => number {
-  return () => {
-    if (element === null || typeof window === "undefined") return 0;
-    const rect = element.getBoundingClientRect();
-    const total = rect.height - window.innerHeight;
-    if (total <= 0) return 0;
-    return clamp01(-rect.top / total);
-  };
 }

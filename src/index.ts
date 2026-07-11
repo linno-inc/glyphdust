@@ -3,73 +3,17 @@
  * for react-three-fiber.
  *
  * 公開 API はこのファイルから re-export する。
+ * 公開面は <GlyphDust> コンポーネントとその props 型のみ（0.10.0 で
+ * 低レベル関数・vanilla/CDN 経路を削除。理由: 外部利用ゼロでメンテ負債の
+ * 最大塊だったため。提案者: 凜さん 2026-07-11「いらないものを削除して
+ * 徹底的に簡素化」）。内部実装（sampling / shaders / dom-overlay 等）は
+ * パッケージ内部モジュールとして残る。
  */
 
-/** ライブラリのバージョン（package.json と一致させる）。 */
-export const VERSION = "0.9.5";
-
-// 文字・シェイプ → 粒子ターゲット生成（Task-002）
-export {
-  buildTextTargets,
-  buildDenseTextTargets,
-  buildShapeTargets,
-  measureSvgPathBounds,
-  type Random,
-  type TextTargetOptions,
-  type DenseTextTargetOptions,
-  type ShapeTargetOptions,
-} from "./sampling.js";
-
-// GLSL シェーダ（Task-003）
-export {
-  buildVertexShader,
-  FRAGMENT_SHADER,
-  glyphPositionAttribute,
-  GLYPH_POSITION_ATTRIBUTE_PREFIX,
-} from "./shaders.js";
-
-// DOM 重ね合わせ・幾何（Task-004）
-export {
-  viewSizeAtZ0,
-  buildGlyphFromDOM,
-  computeScreenRect,
-  type ViewSize,
-  type DomGlyphOptions,
-  type GlyphScreenRect,
-} from "./dom-overlay.js";
-
-// 進捗ドライバ（React 非依存）
-export {
-  createScrollProgress,
-  computeAutoplayProgress,
-  DEFAULT_TRIGGER_HEIGHT,
-  type DriverConfig,
-  type ScrollDriverConfig,
-  type ManualDriverConfig,
-  type AutoplayDriverConfig,
-} from "./drivers.js";
-
-// スクロール進捗 React フック（React 依存は別ファイルに隔離）
-export { useScrollProgress } from "./use-scroll-progress.js";
-
-// reduced-motion（Task-005）。imperative 判定は React 非依存ファイルに分離。
-export { prefersReducedMotion } from "./prefers-reduced-motion.js";
-export { useReducedMotion } from "./useReducedMotion.js";
-
-// 公開コンポーネント（Task-006）
+// 公開コンポーネント
 export { GlyphDust } from "./GlyphDust.js";
 
-// 最小ワンコール API（React 不要・vanilla）
-export {
-  glyphText,
-  type GlyphTextOptions,
-  type GlyphTextHandle,
-  type MorphToOptions,
-  type MorphToShapeOptions,
-  type ScatterOptions,
-} from "./vanilla.js";
-
-// 公開型（Task-006 / 007）
+// 公開型（GlyphDustProps とそこから辿れる型のみ）
 export type {
   Keyframe,
   TextKeyframe,
@@ -83,3 +27,11 @@ export type {
   GlyphCamera,
   GlyphDustProps,
 } from "./types.js";
+
+// driver prop の型（GlyphDustProps.driver で使う union と各メンバー）
+export type {
+  DriverConfig,
+  ScrollDriverConfig,
+  ManualDriverConfig,
+  AutoplayDriverConfig,
+} from "./drivers.js";

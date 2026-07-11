@@ -5,9 +5,9 @@
 Pass any text and glyphdust dissolves it into thousands of GPU particles, scatters them into a cloud, reforms them into the next glyph, and finally **resolves into crisp, real DOM text** — all driven by a single scroll progress `0 → 1`.
 
 > **Building with an AI agent / codegen?** glyphdust is designed to be generated and driven by agents:
-> one import + one call, safe defaults, a single `progress 0→1` you drive from anything (scroll, timer,
+> one component, safe defaults, a single `progress 0→1` you drive from anything (scroll, timer,
 > agent, audio), and a machine-readable spec at [`llms.txt`](./llms.txt)
-> (CDN: `https://cdn.jsdelivr.net/npm/glyphdust/llms.txt`). Zero-install `<script>` usage below.
+> (CDN: `https://cdn.jsdelivr.net/npm/glyphdust/llms.txt`).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/linno-inc/glyphdust/main/docs/demo.gif" alt="glyphdust: text dissolving into particles and resolving into real text" width="720" />
@@ -24,23 +24,6 @@ Pass any text and glyphdust dissolves it into thousands of GPU particles, scatte
 ```
 
 That's the whole thing. Scroll, and it animates.
-
-### No React? One call.
-
-Don't want to set up react-three-fiber and a `<Canvas>`? Reach for **`glyphText()`** —
-a framework-free function that boots three.js for you, fills any box, and autoplays.
-One import, one call:
-
-```js
-import { glyphText } from "glyphdust";
-
-glyphText("#hero", "LINNO");          // particles fly in, settle into the word, hold
-```
-
-It returns a handle (`destroy()` / `pause()` / `play()` / `restart()`), needs no React,
-and is preset-driven so it looks right with zero config. See [`glyphText()`](#glyphtext-vanilla-one-call) below.
-
-Want **zero install** — just a `<script>` tag in plain HTML? See [Use from a CDN](#use-from-a-cdn-zero-install).
 
 ---
 
@@ -69,33 +52,6 @@ npm i glyphdust three @react-three/fiber
 ```
 
 `three`, `@react-three/fiber`, `react`, and `react-dom` are **peer dependencies** (React 18+, three 0.160+).
-
-> Using only the **`glyphText()`** one-call API (no React)? You just need `three`:
-> `npm i glyphdust three`.
-
----
-
-## Use from a CDN (zero install)
-
-No build step, no `npm install`, no bundler. Drop two `<script>` tags into any HTML
-file and call `glyphText()`. **three.js is bundled in** — nothing else to load.
-
-```html
-<div id="hero" style="width:100vw;height:100vh"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/glyphdust"></script>
-<script>
-  glyphdust.glyphText("#hero", "LINNO");   // particles fly in, settle into the word, hold
-</script>
-```
-
-- The script exposes a global **`glyphdust`** with `glyphText()` and `VERSION`.
-- Same API and options as the npm `glyphText()` below — e.g.
-  `glyphdust.glyphText("#hero", "Hello", { preset: "glow", loop: true })`.
-- Pin a version for production: `https://cdn.jsdelivr.net/npm/glyphdust@0.6.0`
-  (or unpkg: `https://unpkg.com/glyphdust`).
-- The bundle is ~140&nbsp;KB gzipped (three.js included). For React apps or
-  tree-shaking, prefer the `npm i` route above instead.
 
 ---
 
@@ -175,119 +131,6 @@ const [p, setP] = useState(0); // 0 → 1 from time, GSAP, a slider, anything
 ---
 
 ## API
-
-### `glyphText()` (vanilla, one call)
-
-A React-free entry point. It creates the `<canvas>`, boots three.js, fits the target
-element, and autoplays — so an agent (or you) can drop a single line and get particles.
-
-```ts
-glyphText(target, text, options?) => GlyphTextHandle
-```
-
-```js
-import { glyphText } from "glyphdust";
-
-const handle = glyphText("#hero", "LINNO", { preset: "glow", loop: true, pingpong: true });
-// later:
-handle.pause();      // freeze
-handle.play();       // resume
-handle.restart();    // replay from the start
-handle.destroy();    // remove the canvas, free GPU resources, disconnect observers
-```
-
-- **`target`** — a CSS selector or an `HTMLElement`. The canvas fills it (so give the box a size).
-- **`text`** — the word/phrase. `\n` for line breaks.
-- **returns** — a `GlyphTextHandle`: `{ canvas, restart(), pause(), play(), setProgress(0..1), morphTo(text), morphToShape(path), scatter(), destroy() }`.
-
-By default it scatters particles, then forms the text and holds (the last text keyframe
-settles at `0.85` and stays crisp). Pass `keyframes` to take full control.
-
-| option | type | default | description |
-|---|---|---|---|
-| `preset` | `GlyphPreset` | `"default"` | `default` / `minimal` / `lively` / `glow`. |
-| `style` | `GlyphStyle` | — | Per-field overrides on top of `preset`. |
-| `colors` | `GlyphColors` | ink `#1b2330` / accent `#0055ff` | Particle colors. |
-| `count` | `number` | `11000` (mobile `5200`) | Particle count. |
-| `spread` | `number` | `1.3` | Scatter radius for the auto keyframes. |
-| `duration` | `number` | `3.6` | Seconds for `0→1`. |
-| `delay` | `number` | `0` | Start delay (seconds). |
-| `loop` | `boolean` | `false` | Repeat. |
-| `pingpong` | `boolean` | `false` | `0→1→0` when looping. |
-| `playOnView` | `boolean` | `true` | Start when scrolled into view; pauses off-screen. |
-| `autoplay` | `boolean` | `true` | `false` → don't advance by time; drive progress yourself via `handle.setProgress(0..1)` (scroll, GSAP, an AI agent, any signal). |
-| `resolveToDom` | `boolean` | `false` | Resolve particles into **real DOM text** at the ends: fade particles out and reveal the actual element behind the last (and first) `domSelector` text keyframe — crisp, selectable, accessible. |
-| `maxDpr` | `number` | `1.75` | `devicePixelRatio` cap. |
-| `cameraZ` / `cameraFov` | `number` | `7` / `42` | Camera position / vertical FOV. |
-| `keyframes` | `Keyframe[]` | scatter → text | Override the auto sequence entirely. |
-| `fallback` | `boolean` | `true` | On reduced-motion / no-WebGL, draw static text instead of a blank box. |
-| `morphDuration` | `number` | `1.6` | Default seconds per `morphTo()` / `scatter()` morph (streaming). |
-| `resolve` | `boolean` | `true` | The initial text also condenses into **real crisp DOM text** at the end (same finish as `morphTo`). `false` keeps the particle finish. Auto-disabled for custom `keyframes` / `loop` / `pingpong` / multi-line. |
-
-#### Streaming — say new words on the fly (`morphTo` / `scatter`)
-
-For AI agents that decide their words **at runtime**: `morphTo(text)` re-converges the
-particles from wherever they are right now into the new text — same instance, same canvas,
-same WebGL context, no re-creation. Each morph ends by cross-fading into **real crisp DOM
-text** (set `resolve: false` to keep the particle finish).
-
-```js
-const h = glyphText("#hero", "HELLO");
-
-await h.morphTo("THINKING…");   // particles re-form into the new word, then resolve to real text
-await h.morphTo("答えは 42");    // await = wait for convergence (returns true)
-await h.scatter();              // no words → melt into a cloud
-
-// Or stream without waiting — latest wins, interrupted morphs resolve false:
-h.morphTo("こん"); h.morphTo("こんにち"); h.morphTo("こんにちは");
-```
-
-- Calling `morphTo` during a morph retargets mid-flight from the particles' current
-  positions (no jump, no flicker).
-- The returned promise resolves `true` when the word has settled, `false` if it was
-  superseded by a newer `morphTo` (or the handle was destroyed).
-- Per-call options: `{ duration, resolve, font, dense, worldW, offsetX, offsetY }`.
-- **Shapes too**: `morphToShape(path)` re-converges the particles into any SVG path —
-  same latest-wins semantics. `path` is the `d` attribute string (array for multi-path
-  icons); options: `{ duration, viewBox, fillRule, worldW, offsetX, offsetY }`.
-  ```js
-  await h.morphTo("I");
-  await h.morphToShape("M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 …"); // ♥
-  await h.morphTo("YOU");
-  ```
-- Long text auto-fits (the glyph shrinks to stay fully visible). Multi-line text keeps the
-  particle finish (no DOM resolve).
-- Under reduced-motion / no-WebGL, `morphTo` updates the static fallback text, so agent
-  output stays accessible.
-
-#### Drive it yourself — scroll, an agent, anything (`autoplay: false` + `setProgress`)
-
-```js
-// Two real headlines in the DOM (#a "LINNO", #b "創造"), each tightly wrapping its text.
-const h = glyphText("#hero", "LINNO / 創造", {
-  autoplay: false,       // progress comes from you, not a clock
-  resolveToDom: true,    // ends resolve into the real DOM text (crisp & selectable)
-  keyframes: [
-    { type: "text",    text: "LINNO", domSelector: "#a" }, // particles sampled from the real element → pixel-aligned
-    { type: "scatter", spread: 0.4 },
-    { type: "text",    text: "創造",  domSelector: "#b" },
-  ],
-});
-
-// scroll-driven:
-addEventListener("scroll", () => {
-  const p = scrollY / (document.body.scrollHeight - innerHeight);
-  h.setProgress(p);      // 0 → LINNO, 0.5 → particle cloud, 1 → 創造
-});
-// …or an agent / timeline / audio can call h.setProgress(x) every frame just the same.
-```
-
-With `resolveToDom`, glyphdust reads where each `domSelector` element's text is **actually
-painted** (so `display:flex`-centered or padded boxes align correctly) and cross-fades the
-particles into that real text.
-
-Reduced-motion and no-WebGL are handled for you: with `fallback` on (the default) the
-target shows plain centered text instead of a blank box.
 
 ### `<GlyphDust>` props
 
@@ -417,10 +260,6 @@ style: {
 
 `accentRatio` (`0..1`) is the fraction of particles drawn in `accent`.
 
-### Low-level helpers
-
-For custom rigs, the building blocks are exported too: `buildTextTargets`, `buildDenseTextTargets`, `buildShapeTargets`, `measureSvgPathBounds`, `buildVertexShader`, `FRAGMENT_SHADER`, `createScrollProgress`, `useScrollProgress`, `computeAutoplayProgress`, `useReducedMotion`, `prefersReducedMotion`, `viewSizeAtZ0`, `buildGlyphFromDOM`, `computeScreenRect`.
-
 ---
 
 ## Accessibility & resilience
@@ -434,9 +273,11 @@ For custom rigs, the building blocks are exported too: `buildTextTargets`, `buil
 
 ## Status
 
-`0.5.0` — the component, the `glyphText()` one-call API, and everything above are
-implemented and demoed (see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md).
-Published from [LINNO](https://linno.co.jp). Semantic-versioned; expect minor API polish before `1.0`.
+`0.10.0` — the `<GlyphDust>` component and everything above are implemented and demoed
+(see [`examples/`](./examples)) and [`CHANGELOG.md`](./CHANGELOG.md). The former React-free
+`glyphText()` / CDN path was removed in `0.10.0` to keep the package small and focused
+(use `0.9.x` if you need it). Published from [LINNO](https://linno.co.jp).
+Semantic-versioned; expect minor API polish before `1.0`.
 
 ## License
 

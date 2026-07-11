@@ -539,7 +539,7 @@ export function GlyphPoints(props: GlyphPointsProps) {
     const sampleCache = new Map<string, Float32Array>();
     keyframes.forEach((kf, i) => {
       if (kf.type !== "text" || !kf.domSelector) return;
-      const cacheKey = `${kf.domSelector} ${kf.text}`;
+      const cacheKey = `${kf.domSelector}\u0000${kf.text}`;
       let next = sampleCache.get(cacheKey) ?? null;
       if (!next) {
         next = buildGlyphFromDOM(count, kf.text.split("\n"), {
